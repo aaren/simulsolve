@@ -110,6 +110,37 @@ def brent_sol():
     return U_sub, U_super
 
 
+def poly_sol():
+    h, U0, d1c, d0 = sympy.symbols('h, U0, d1c, d0')
+    f1 = eq1(h, U0, d1c, d0)
+    f2 = eq2(h, U0, d1c, d0)
+
+    # rearrange f1 to get U0^2
+    U2 = ((f1 + 1) / U0 ** 2) ** -1
+    # substitute this into f2
+    f3 = f2.subs(U0 ** 2, U2)
+
+    # f3 is now f(h, d1c) only.
+    # integer exponents --> rational fraction
+    # so we only need to take the numerator of f3 as we are
+    # looking for where it goes to 0. this is a polynomial in
+    # (h, d1c, d0)
+    print "constructing polynomial in d1c..."
+    p3 = sympy.fraction(f3.cancel())[0]
+
+    # now for given d0, h we can find roots of the polynomial
+    hv = 0.2
+    d0v = 0.3
+    phd = p3.subs({h: hv, d0: d0v})
+    coeffs = sympy.poly(phd, d1c).coeffs()
+    # TODO: substitute the coeffs just before calculating the roots
+    roots = np.roots(coeffs)
+    # and throw out those that aren't physical.
+
+    # then calculate U0 from the given d0, h for each of the roots
+    # in d1c
+
+
 def h_eval(hsol, U2):
     h, U0, d1c, d0 = sympy.symbols('h, U0, d1c, d0')
     # hsol is 4 roots of a quartic. for each of these roots we need to
