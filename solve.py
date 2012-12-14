@@ -1,7 +1,7 @@
 import numpy as np
 import sympy
 import matplotlib.pyplot as plt
-# from scipy.optimize import fsolve
+from scipy.optimize import brentq
 from sympy.utilities.lambdify import lambdify
 
 
@@ -65,6 +65,49 @@ def so_sol():
     print "solving for h..."
     hsol = sympy.solve(hd1c, h)
     return hsol, U2
+
+
+def brent_sol():
+    h, U0, d1c, d0 = sympy.symbols('h, U0, d1c, d0')
+    f1 = eq1(h, U0, d1c, d0)
+    f2 = eq2(h, U0, d1c, d0)
+
+    # rearrange f1 to get U0^2
+    U2 = ((f1 + 1) / U0 ** 2) ** -1
+    # substitute this into f2
+    f3 = f2.subs(U0 ** 2, U2)
+
+    # f3 is now f(h, d1c) only.
+    # integer exponents --> rational fraction
+    # so we only need to take the numerator of f3 as we are
+    # looking for where it goes to 0. this is a polynomial in
+    # (h, d1c, d0)
+    print "constructing polynomial in h..."
+    p3 = sympy.fraction(f3.cancel())[0]
+
+    # subsitute in a value of d0 (don't actually have to, can leave
+    # this unconstrained if we want).
+    d0v = 0.1
+    hd1c = p3.subs(d0, d0v)
+
+    # hd1c is a quartic in h and a quintic in d1c.  there is no
+    # algorithm to solve a quintic, but quartics are soluble.
+
+    # let's solve the quintic numerically over a range of h
+    H = np.linspace(0.1, 1, 10)
+
+    quintic = lambdify((d1c, h), hd1c, "numpy")
+    return quintic
+
+    c0 = (d0v * (1 - d0v)) ** .5
+    print "applying brentq"
+    # the subcritical boundary is on the interval [0, c0]
+    # yes, but this boundary is in U and the quintic is in d1c!
+    U_sub = np.array([brentq(quintic, 0, c0, args=(h)) for h in H])
+    # supercritical boundary is on [c0, 0.5]
+    U_super = np.array([brentq(quintic, c0, 0.5, args=(h)) for h in H])
+
+    return U_sub, U_super
 
 
 def h_eval(hsol, U2):
