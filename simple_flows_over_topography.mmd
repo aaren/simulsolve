@@ -1,0 +1,90 @@
+title: Simple flow over topography
+date: 16/12/2012
+
+Understanding the basic dynamics of how a fluid will act when
+flowing over a hill is of obvious importance in geophysical problems.
+
+The simplest case that we can consider is a shallow, single layer
+fluid [#houghton-kasahara1968].
+
+
+
+The two layer system is more complicated. We now have to solve the
+equations [#baines1995]
+
+\\[ U_0^2 \left(\frac{d_0^2}{d_{1c}^3} + \frac{(1 - d_0)^2}{(1 - d_{1c} - d_0 h)^3} \right) - 1 = 0 \\]
+\\[ 0.5 U_0^2 \left( \frac{d_0^2}{d_{1c}^2} - \frac{(1 - d_0)^2}{(1 - d_{1c} - d_0 h)^2} \right) + d_{1c} + d_0 (h - 1) = 0 \\]
+
+We can easily eliminate $U_0$. This leaves us with an equation that
+is a quartic polynomial in both $h$ and $d_{1c}$ (after cancelling
+common factors and dropping the denominator).
+
+Here's how you do that in python (using [sympy][]):
+
+    :::python
+    import sympy as sp
+
+    h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
+    f1 = (U0) ** 2 * ((d0 ** 2 / d1c ** 3) + (1 - d0) ** 2 / (1 - d1c - h) ** 3) - 1
+    f2 = 0.5 * (U0) ** 2 * ((d0 ** 2 / d1c ** 2) - (1 - d0) ** 2 / (1 - d1c - h) ** 2) + d1c + (h - d0)
+    # rearrange f1 to get U0^2
+    U2 = ((f1 + 1) / U0 ** 2) ** -1
+    # substitute this into f2
+    f3 = f2.subs(U0 ** 2, U2)
+    # f3 is now f(h, d1c) only.
+    # integer exponents --> rational fraction
+    # so we only need to take the numerator of f3 as we are
+    # looking for where it goes to 0. this is a polynomial in
+    # (h, d1c, d0)
+    p3 = sp.fraction(f3.cancel())[0]
+
+[sympy]: http://sympy.org
+
+Now we have a polynomial `p3`. We want to see solutions to this in
+$(h, U_0)$. For given $h$, `p3` will give us four solutions for
+$d_{1c}$ of which we expect two to be physical.
+
+Numpy can solve polynomials very quickly given a list of coefficients.
+We can get that list of coefficients here for given $(d_0, h)$. We use 
+sympy to make a function that will return the coefficients list for 
+given $h$ and $d_0$.
+
+    :::python
+    coeffs = sp.Poly(p3.subs{h: hv, d0: d0v}, d1c).coeffs()
+
+But this isn't especially fast and can't use an array of $h$ as
+input, which is what we'd like to do. We can create a function that
+can be called using an array using lambdify:
+
+    :::python
+    coeff = sp.lambdify((d0, h), sp.Poly(p3, d1c).coeffs(), "numpy")
+
+Then we can create a list of solutions in U with
+
+    :::python
+    H = np.linspace(0, 1)
+    d0_ = np.array([d0_])
+    coeffs = np.array(coeff(*np.meshgrid(d0_, H)))
+    # now we have a list of arrays of coefficients, each array
+    # having the dimension of H
+    # np.roots can only take 1d input so we have to be explicit.
+    # there are 5 coefficients in a quartic
+    Roots = np.array([np.roots(coeffs[:, i].squeeze()) for i in range(len(H))])
+    # Roots is now a 2d array of first dimension H. That is, for h
+    # in H, roots in d1c are given by roots in Roots.
+    # Now we work out what U would be
+    Uf = sp.lambdify((d0, h, d1c), U(h, d0, d1c), "numpy")
+    U_sol = [Uf(d0_, H, Roots[:, i]) for i in range(4)]
+
+Then we can plot (only the last two branches are physical):
+
+    :::python
+    import matplotlib.pyplot as plt
+
+    plt.plot(H, Usol[2])
+    plt.plot(H, Usol[3])
+    plt.xlim(0, 1)
+    plt.xlabel('Height of topography')
+    plt.ylim(0, 1)
+    plt.ylabel('Flow velocity')
+    plt.show()
