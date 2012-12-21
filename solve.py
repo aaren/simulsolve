@@ -1,45 +1,196 @@
 import numpy as np
-import sympy
+# import matplotlib as mpl
+# mpl.use('Agg')
+import sympy as sp
 import matplotlib.pyplot as plt
-from scipy.optimize import brentq
+from scipy.optimize import brentq, fsolve
 from sympy.utilities.lambdify import lambdify
+
+h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
+Cb, U11, U21, d11, S = sp.symbols('Cb, U11, U21, d11, S')
 
 
 def sympy_solve():
-    h, U0, d1c = sympy.S('h U0 d1c'.split())
+    h, U0, d1c = sp.S('h U0 d1c'.split())
     d0 = 0.1
     equations = [(U0) ** 2 * ((d0 ** 2 / d1c ** 3) + (1 - d0) ** 2 / (1 - d1c - d0 * h) ** 3) - 1,
                  0.5 * (U0) ** 2 * ((d0 ** 2 / d1c ** 2) + (1 - d0) ** 2 / (1 - d1c - d0 * h)) + d1c + d0 * (h - 1)]
-    sympy.nsolve(equations, (U0, h, d1c), (0.5, 0.5, 0.2))
+    sp.nsolve(equations, (U0, h, d1c), (0.5, 0.5, 0.2))
 
 
-def eq1(h, U0, d1c, d0):
-    f = (U0) ** 2 * ((d0 ** 2 / d1c ** 3) + (1 - d0) ** 2 / (1 - d1c - d0 * h) ** 3) - 1
+class Equation():
+    """A factory for the equations found in the paper"""
+    def __init__(self, eqno):
+        self.eqno = eqno
+
+    h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
+
+    def eq211():
+        pass
+
+
+def eq29(h=h, S=S, U0=U0, d0=d0, d1c=d1c):
+    f = h * (1 - S) / S - (U0 ** 2 / 2) * (d0 ** 2 / d1c ** 2)
     return f
 
 
-def eq2(h, U0, d1c, d0):
-    f = 0.5 * (U0) ** 2 * ((d0 ** 2 / d1c ** 2) + (1 - d0) ** 2 / (1 - d1c - d0 * h)) + d1c + d0 * (h - 1)
+def eq211(h=h, U0=U0, d1c=d1c, d0=d0):
+    """white-helfrich2012 use h where they mean h/d0 - the scaling in
+    Baines is w.r.t d0 rather than H. Corrected here."""
+    f = (U0) ** 2 * ((d0 ** 2 / d1c ** 3) + (1 - d0) ** 2 / (1 - d1c - h) ** 3) - 1
     return f
+
+
+def eq212(h=h, U0=U0, d1c=d1c, d0=d0):
+    """NB. white-helfrich2012 has a sign error in eq212. corrected here.
+
+    white-helfrich2012 use h where they mean h/d0 - the scaling in
+    Baines is w.r.t d0 rather than H. Corrected here."""
+    f = 0.5 * (U0) ** 2 * ((d0 ** 2 / d1c ** 2) - (1 - d0) ** 2 / (1 - d1c - h) ** 2) + d1c + (h - d0)
+    return f
+
+
+def eq31(U0=U0, Cb=Cb, d11=d11, d0=d0):
+    """Klemp et al bore jump condition"""
+    # TODO: confirm that this should be eq for C_b and not C_b + U0
+    f = (U0 + Cb) ** 2 - ((d11 ** 2 * (1 - d11) * (2 - d11 - d0)) / (d11 + d0 + d11 ** 2 - 3 * d0 * d11))
+    return f
+
+
+def eq33(U11=U11, Cb=Cb, d11=d11, U0=U0, d0=d0):
+    """Mass conservation #1"""
+    # f = (U11 + 0) * d11 - (U0 + Cb) * d0
+    f = (U11 + Cb) * d11 - (U0 + Cb) * d0
+    return f
+
+
+def eq34(U21=U21, Cb=Cb, d11=d11, U0=U0, d0=d0):
+    """Mass conservation #2"""
+    # f = (U21 + 0) * (1 - d11) - (U0 + Cb) * (1 - d0)
+    f = (U21 + Cb) * (1 - d11) - (U0 + Cb) * (1 - d0)
+    return f
+
+
+def eq35(d11=d11, d1c=d1c, h=h, U11=U11, U21=U21):
+    """Bernoulli"""
+    f = d11 - d1c - h - (U11 ** 2 / 2) * (d11 ** 2 / d1c ** 2 - 1) - (U21 ** 2 / 2) * (1 - (1 - d11) ** 2 / (1 - d1c - h) ** 2)
+    return f
+
+
+def eq36(h=h, S=S, d1c=d1c, d11=d11, U11=U11, U21=U21, d0=d0):
+    """Momentum conservation"""
+    # TODO: verify, especially sign of 0.5 in U11
+    f = h ** 2 / (2 * S) - h / (S) + d1c ** 2 / 2 - d0 ** 2 / 2 + d0 - d1c * (1 - h) + (U11 ** 2) * (0.5 + (d11 ** 2 / d1c) - d11) + (U21 ** 2) * ((1 - d11) ** 2 / (1 - d1c - h) + d11 - 1)
+    return f
+
+
+def eq38(Dc=0, U0=U0, S=S, h=h, d11=d11, d1c=d1c, U11=U11):
+    """Energy dissipation. Rightward bound of resonant wedge."""
+    f = U0 * h * ((1 - S) / S) - (U0 / 2) * U11 ** 2 * d11 ** 2 / d1c ** 2 - Dc
+    return f
+
+
+def eq39(U0=U0, d11=d11, U11=U11, U21=U21):
+    """Bore criticality. Upper bound of resonant wedge."""
+    f = U0 + (U11 - U21) * (1 - 2 * d11) - ((1 - (U11 - U21) ** 2) * d11 * (1 - d11)) ** .5
+    return f
+
+
+def us():
+    """Substitute out the bore speed to obtain relations for u11 and u12.
+    """
+    # TODO: check sign of roots
+    cb = sp.solve(eq31(), Cb)[1]
+    u11 = sp.solve(eq33().subs(Cb, cb), U11)[0]
+    u21 = sp.solve(eq34().subs(Cb, cb), U21)[0]
+    return u11, u21
+
+
+def resonance():
+    """Reduce the set of resonant equations to two equations in
+    (S, d0, d11, U0, h, d1c)
+    """
+    u11, u21 = us()
+    # now use these in eq35 and eq36 to elim u11, u21, d1c
+    p35 = eq35().subs({U11: u11, U21: u21})
+    p36 = eq36().subs({U11: u11, U21: u21})
+    # should be two equations in 6 unknowns (S, d0, d11, U0, h, d1c)
+
+    # u21b = sp.solve(eq35(), U21)[0]
+    # right_bound = eq36().subs({U21: u21b, U21: u11, d1c: d1c_})
+    return p35, p36
+
+
+def bore_amp_contour(d11_, h_, guess):
+    """Find a specific contour of bore amplitude d11_ for
+    given h_, starting with the guess in (U0, d1c).
+    Returns the converged U0, d1c.
+    """
+    S_ = 0.75
+    d0_ = 0.3
+    p35, p36 = resonance()
+    p35d, p36d = p35.subs({d11: d11_}), p36.subs({d11: d11_})
+    p35s, p36s = p35d.subs({S: S_, d0: d0_}), p36d.subs({S: S_, d0: d0_})
+    p35sh, p36sh = p35s.subs(h, h_), p36s.subs(h, h_)
+
+    f35 = sp.lambdify((U0, d1c), p35sh, "numpy")
+    f36 = sp.lambdify((U0, d1c), p36sh, "numpy")
+
+    def E(p):
+        return f35(*p), f36(*p)
+    root = fsolve(E, guess)
+    return root
+
+
+def right_resonance(h_, d11_=None, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
+    """For a given h, S, d0 and optionally d11, find the U0 that
+    corresponds to the rightward bound of the resonant wedge.
+
+    Requires an initial guess for U0, d11 unless d11 is specified in
+    which case the guess is for U0 only.
+    """
+    u11 = us()[0]
+    d1c_ = sp.solve(eq38(), d1c)[1].subs(U11, u11)
+    p35, p36 = resonance()
+    p35d, p36d = p35.subs({d1c: d1c_}), p36.subs({d1c: d1c_})
+    p35s, p36s = p35d.subs({S: S_, d0: d0_}), p36d.subs({S: S_, d0: d0_})
+    p35sh, p36sh = p35s.subs(h, h_), p36s.subs(h, h_)
+
+    if not d11_:
+        f35 = sp.lambdify((U0, d11), p35sh, "numpy")
+        f36 = sp.lambdify((U0, d11), p36sh, "numpy")
+    else:
+        p35sh, p36sh = p35sh.subs(d11, d11_), p36sh.subs(d11, d11_)
+        f35 = sp.lambdify((U0), p35sh, "numpy")
+        f36 = sp.lambdify((U0), p36sh, "numpy")
+
+    def E(p):
+        return f35(*p), f36(*p)
+    root = fsolve(E, guess)
+    return root
 
 
 def subbed():
-    h, U0, d1c, d0 = sympy.S('h U0 d1c d0'.split())
-    exp = 0.5 * (1 / ((d0 ** 2 / d1c ** 3) + (1 - d0) ** 2 / (1 - d1c - d0 * h) ** 3)) * ((d0 ** 2 / d1c ** 2) + (1 - d0) ** 2 / (1 - d1c - d0 * h)) + d1c + d0 * (h - 1)
-    return exp
+    f1 = eq211()
+    f2 = eq212()
+    # rearrange f1 to get U0^2
+    U2 = ((f1 + 1) / U0 ** 2) ** -1
+    # substitute this into f2
+    f3 = f2.subs(U0 ** 2, U2)
+    return f3
 
 
 def simplify():
     exp = subbed()
-    simp = sympy.simplify(exp)
-    # simp = sympy.collect(exp, d1c)
+    simp = sp.simplify(exp)
+    # simp = sp.collect(exp, d1c)
     print simp
 
 
-def so_sol():
-    h, U0, d1c, d0 = sympy.symbols('h, U0, d1c, d0')
-    f1 = eq1(h, U0, d1c, d0)
-    f2 = eq2(h, U0, d1c, d0)
+def so_sol(d0v=0.1):
+    h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
+    f1 = eq211(h, U0, d1c, d0)
+    f2 = eq212(h, U0, d1c, d0)
 
     # rearrange f1 to get U0^2
     U2 = ((f1 + 1) / U0 ** 2) ** -1
@@ -52,26 +203,26 @@ def so_sol():
     # looking for where it goes to 0. this is a polynomial in
     # (h, d1c, d0)
     print "constructing polynomial in h..."
-    p3 = sympy.fraction(f3.cancel())[0]
+    p3 = sp.fraction(f3.cancel())[0]
 
     # subsitute in a value of d0 (don't actually have to, can leave
     # this unconstrained if we want).
-    # d0v = 0.1
-    # hd1c = p3.subs(d0, d0v)
-    hd1c = p3
+    hd1c = p3.subs(d0, d0v)
+    U2 = U2.subs(d0, d0v)
+    # hd1c = p3
 
     # hd1c is a quartic in h and a quintic in d1c.  there is no
     # algorithm to solve a quintic, but quartics are soluble.
     print "solving for h..."
-    hsol = sympy.solve(hd1c, h)
+    hsol = sp.solve(hd1c, h)
     return hsol, U2
 
 
 def brent_sol():
-    h, U0, d1c, d0 = sympy.symbols('h, U0, d1c, d0')
-    f1 = eq1(h, U0, d1c, d0)
-    f2 = eq2(h, U0, d1c, d0)
+    f1 = eq211()
+    f2 = eq212()
 
+    h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
     # rearrange f1 to get U0^2
     U2 = ((f1 + 1) / U0 ** 2) ** -1
     # substitute this into f2
@@ -83,7 +234,7 @@ def brent_sol():
     # looking for where it goes to 0. this is a polynomial in
     # (h, d1c, d0)
     print "constructing polynomial in h..."
-    p3 = sympy.fraction(f3.cancel())[0]
+    p3 = sp.fraction(f3.cancel())[0]
 
     # subsitute in a value of d0 (don't actually have to, can leave
     # this unconstrained if we want).
@@ -110,61 +261,105 @@ def brent_sol():
     return U_sub, U_super
 
 
-def poly_sol():
-    h, U0, d1c, d0 = sympy.symbols('h, U0, d1c, d0')
-    f1 = eq1(h, U0, d1c, d0)
-    f2 = eq2(h, U0, d1c, d0)
+def U(hv, d0v, d1cv):
+    f1 = eq211()
+    # rearrange f1 to get U0^2
+    U2 = ((f1 + 1) / U0 ** 2) ** -1
+    U = U2.subs({h: hv, d0: d0v, d1c: d1cv}) ** .5
+    return U
 
+
+def U_subbed_poly():
+    f1 = eq211()
+    f2 = eq212()
     # rearrange f1 to get U0^2
     U2 = ((f1 + 1) / U0 ** 2) ** -1
     # substitute this into f2
     f3 = f2.subs(U0 ** 2, U2)
-
     # f3 is now f(h, d1c) only.
     # integer exponents --> rational fraction
     # so we only need to take the numerator of f3 as we are
     # looking for where it goes to 0. this is a polynomial in
     # (h, d1c, d0)
     print "constructing polynomial in d1c..."
-    p3 = sympy.fraction(f3.cancel())[0]
+    p3 = sp.fraction(f3.cancel())[0]
+    return p3
 
-    # now for given d0, h we can find roots of the polynomial
-    hv = 0.2
-    d0v = 0.3
+
+def fast_solve(H, d0_=0.1, combined_poly=None):
+    if not combined_poly:
+        combined = U_subbed_poly()
+    combined = combined_poly
+    # for h_ in np.linspace(0, 1):
+        # p = sp.Poly(combined.subs({h: h_, d0: d0_}), d1c)
+        # D1c = np.roots(p.coeffs())
+        # u = [U(h_, d0_, d1c_) for d1c_ in D1c
+                    # if np.isreal(d1c_) and (0 < d1c_.real < h_)]
+    # TODO: lambdify, work over array of h
+    # we want to get the coefficients, but also to be able to
+    # evaluate over an input array. the latter requires that we
+    # use lambdify.
+    # we can do this!
+    coeff = lambdify((d0, h), sp.Poly(combined, d1c).coeffs(), "numpy")
+    d0_ = np.array([d0_])
+    coeffs = np.array(coeff(*np.meshgrid(d0_, H)))
+    # now we have a list of arrays of coefficients, each array
+    # having the dimension of H
+    # np.roots can only take 1d input so we have to be explicit
+    Roots = np.array([np.roots(coeffs[:, i].squeeze()) for i in range(len(H))])
+    # Roots is now a 2d array of first dimension H. That is, for h
+    # in H, roots in d1c are given by roots in Roots.
+    # Now we work out what U would be
+    Uf = lambdify((d0, h, d1c), U(h, d0, d1c), "numpy")
+    U_sol = [Uf(d0_, H, Roots[:, i]) for i in range(4)]
+    return U_sol
+
+
+    # what we want is an array of h and 3 arrays of corresponding
+    # roots in U. then if we also have an input array of d0, we
+    # can have 2d arrays in U.
+
+
+def poly_solve(p3, hv, d0v):
+    """for given d0, h find roots of the polynomial p3"""
     phd = p3.subs({h: hv, d0: d0v})
-    coeffs = sympy.poly(phd, d1c).coeffs()
+    coeffs = sp.poly(phd, d1c).coeffs()
     # TODO: substitute the coeffs just before calculating the roots
     roots = np.roots(coeffs)
     # and throw out those that aren't physical.
-
+    physical_roots = [r for r in roots if (0 < r < (1 - hv))]
     # then calculate U0 from the given d0, h for each of the roots
     # in d1c
+    return roots
+    return physical_roots
 
 
-def h_eval(hsol, U2):
-    h, U0, d1c, d0 = sympy.symbols('h, U0, d1c, d0')
+def h_eval(hsol, U2, n=1000):
+    h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
     # hsol is 4 roots of a quartic. for each of these roots we need to
     # evaluate h over a fine range of physical d1c to give an array
     # of possible (h, d1c) for each root.
 
-    # evaluation over an array is slow using sympy. we use lambdify
+    # evaluation over an array is slow using sp. we use lambdify
     # to convert to a function that can be used for fast evaluation.
     # solF is a list of functions of d1c and d0 representing the roots
-    solF = [lambdify((d1c, d0), sol) for sol in hsol]
+    # solF = [lambdify((d1c, d0), sol) for sol in hsol]
+    solF = [lambdify((d1c), sol, "numpy") for sol in hsol]
 
-    D0 = np.arange(0, 1, 11)
-    D1c = np.arange(0, 1, 11)
-    grid = np.meshgrid(D1c, D0)
+    # D0 = np.linspace(0.001, 1, 1000)
+    D1c = np.linspace(0.001 + 0j, 1, n)
+    # grid = np.meshgrid(D1c, D0)
     print "evaluating h over grid"
-    h_roots_eval = [f(*grid) for f in solF]
+    # h_roots_eval = [f(*grid) for f in solF]
+    h_roots_eval = [f(D1c) for f in solF]
 
     # we then subsitute these arrays of h, d1c, d0 back into f1 or f2
     # to find the corresponding U0, giving us an array of (U0, h,
     # d1c) for each root.
 
-    U = lambdify((h, d1c, d0), U2 ** .5)
+    U = lambdify((h, d1c), U2 ** .5, "numpy")
     print "evaluating U over grid"
-    Usol = [U(h, *grid) for h in h_roots_eval]
+    Usol = [U(h, D1c) for h in h_roots_eval]
 
     # Useful outputs are
     # D0 - array of d0
@@ -174,7 +369,8 @@ def h_eval(hsol, U2):
     #                quartic.
     # Usol - U0 that correspond to the h in h_roots_eval
 
-    return Usol, h_roots_eval, D0
+    return Usol, h_roots_eval
+    # return Usol, h_roots_eval, D0
 
 
 def Uh(d0, U_sol, h_sol, D0):
@@ -197,15 +393,17 @@ def plot_branch(ax, n, U, H):
 
 
 def main():
-    hsol, U2 = so_sol()
-    Usol, hsol, D0 = h_eval(hsol, U2)
-    print "extracting U and h at d0 = 0.3"
-    U, H = Uh(0.3, Usol, hsol, D0)
+    H = np.linspace(0.001, 0.999, 1000)
+    poly = U_subbed_poly()
+    Usol = fast_solve(H, d0_=0.1, combined_poly=poly)
+    print "extracting U and h at d0 = 0.1"
+    # U, H = Uh(0.1, Usol, hsol, D0)
     print "plotting first solution branch..."
     fig = plt.figure()
     ax = fig.add_subplot(111)
     for n in range(4):
-        plot_branch(n, U, H, ax)
+        # plot_branch(n, U, H, ax)
+        ax.plot(H, Usol[n], 'o')
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     plt.savefig('branches.png')
