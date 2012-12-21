@@ -1,0 +1,51 @@
+title: Resonant flow over topography
+date: 17/12/2012
+
+At the jump mass and momentum must be conserved, but we require an
+additional assumption about energy dissipation to close the system. 
+
+
+Most recently a condition [#klemp-etal1997] that conserves energy
+only in the expanding layer has been assumed:
+
+\\[ U_0 + C_b = \left[\frac{d_{11}^2 (1 - d_{11}) (2 - d_{11} - d_{0})}{d{11} + d_0 + d_{11}^2 -3 d_0 d_{11}} \right]^{1/2} \\]
+
+where $C_b$ is the bore speed relative to $U_0$.
+
+Mass conservation gives
+
+\\[ (U_{11} + C_b) d_{11} = (U_0 + C_b) d_0 \\]
+\\[ (U_{21} + C_b) (1 - d_{11}) = (U_0 + C_b) (1 - d_0) \\]
+
+The bernoulli equation 
+
+\\[ d_{11} - d{1c} - h = \frac{1}{2} U_{11}^2 \left[{d{11}^2}{d_{1c}^2} - 1 \right] + \frac{1}{2} U_{21}^2 \left[1 - \frac{(1 - d_{11}^2)}{(1 - d_{1c} - h)^2} \right] \\]
+
+Conservation of momentum
+
+\\[ \frac{h^2}{2S} - \frac{h}{S} + \frac{1}{2} d_{1c}^2 - \frac{1}{2} d_0^2 + d_0 - d_{1c} + d_{1c} h + U_{11}^2 \left[\frac{1}{2} + \frac{d_{11}^2}{d_{1c}} - d_{11} \right] + U_{21}^2 \left[ \frac{(1 - d{11})^2}{1 - d_{1c} - h} + d_{11} - 1 \right] = 0 \\]
+
+These equations are true for bore solutions to the gravity current
+propagating in two layers and will hold across the entire domain in
+which this is the case (termed the 'resonant wedge' in
+[#white-helfrich2012]).
+
+We require an additional equation to close the system.
+
+The domain is bounded to the right by the curve of minimum energy
+dissipation:
+
+\\[ D_c = U_0 \Delta = U_0 \frac{h (1 - S)}{S} - \frac{1}{2}U_0 U_{11}^2 \frac{d_{11}^2}{d_{1c}^2} = 0 \\]
+
+The resonant wedge terminates at the supercritical boundary or when
+the flow becomes critical through the bore region upstream of the
+gravity current front, such that
+
+\\[ c_l = U_0 + (U_{11} - U_{21})(1 - 2d_{11}) - [(1 - (U_{11} - U_{21})^2 d_{11} (1 - d_{11})]^{1/2} = 0 \\]
+
+This is analogous to the transition to critical flow immediately in
+fron of solid topography, show by [#baines1984] to correspond to the
+maximum possible upstream disturbance.
+
+Beyond this limit upstream rarefactions are produced.
+
