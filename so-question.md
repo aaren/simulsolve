@@ -34,11 +34,11 @@ Here are the equations in python:
 <!-- language: python -->
 
     def eq1(h, U0, d1c, d0=0.1):
-        f = (U0) ** 2 * ((d0 ** 2 / d1c ** 3) + (1 - d0) ** 2 / (1 - d1c - d0 * h) ** 3) - 1
+        f = (U0) ** 2 * ((d0 ** 2 / d1c ** 3) + (1 - d0) ** 2 / (1 - d1c - d0) ** 3) - 1
         return f
 
     def eq2(h, U0, d1c, d0=0.1):
-        f = 0.5 * (U0) ** 2 * ((d0 ** 2 / d1c ** 2) + (1 - d0) ** 2 / (1 - d1c - d0 * h)) + d1c + d0 * (h - 1)
+        f = 0.5 * (U0) ** 2 * ((d0 ** 2 / d1c ** 2) + (1 - d0) ** 2 / (1 - d1c - d0) ** 2) + d1c + (h - d_0)
         return f
 
 I'm expecting a solution that has a number of solution branches (not
