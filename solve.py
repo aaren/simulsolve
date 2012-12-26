@@ -52,21 +52,18 @@ def eq212(h=h, U0=U0, d1c=d1c, d0=d0):
 
 def eq31(U0=U0, Cb=Cb, d11=d11, d0=d0):
     """Klemp et al bore jump condition"""
-    # TODO: confirm that this should be eq for C_b and not C_b + U0
     f = (U0 + Cb) ** 2 - ((d11 ** 2 * (1 - d11) * (2 - d11 - d0)) / (d11 + d0 + d11 ** 2 - 3 * d0 * d11))
     return f
 
 
 def eq33(U11=U11, Cb=Cb, d11=d11, U0=U0, d0=d0):
     """Mass conservation #1"""
-    # f = (U11 + 0) * d11 - (U0 + Cb) * d0
     f = (U11 + Cb) * d11 - (U0 + Cb) * d0
     return f
 
 
 def eq34(U21=U21, Cb=Cb, d11=d11, U0=U0, d0=d0):
     """Mass conservation #2"""
-    # f = (U21 + 0) * (1 - d11) - (U0 + Cb) * (1 - d0)
     f = (U21 + Cb) * (1 - d11) - (U0 + Cb) * (1 - d0)
     return f
 
@@ -77,21 +74,26 @@ def eq35(d11=d11, d1c=d1c, h=h, U11=U11, U21=U21):
     return f
 
 
-def eq36(h=h, S=S, d1c=d1c, d11=d11, U11=U11, U21=U21, d0=d0):
-    """Momentum conservation"""
-    # TODO: verify, especially sign of 0.5 in U11
-    f = h ** 2 / (2 * S) - h / (S) + d1c ** 2 / 2 - d0 ** 2 / 2 + d0 - d1c * (1 - h) + (U11 ** 2) * (0.5 + (d11 ** 2 / d1c) - d11) + (U21 ** 2) * ((1 - d11) ** 2 / (1 - d1c - h) + d11 - 1)
+def eq36(h=h, S=S, d1c=d1c, d11=d11, U11=U11, U21=U21):
+    """Momentum conservation. White & Helfrich 2012 contains an error.
+    All d_0 should be replaced with d_11. Corrected here.
+    """
+    f = (h ** 2 / (2 * S)) - h / (S) + (d1c ** 2 / 2) - (d11 ** 2 / 2) \
+            + d11 - d1c + d1c * h \
+            + (U11 ** 2) * (0.5 + (d11 ** 2 / d1c) - d11)\
+            + (U21 ** 2) * ((1 - d11) ** 2 / (1 - d1c - h) + d11 - 1)
     return f
 
 
-def eq38(Dc=0, U0=U0, S=S, h=h, d11=d11, d1c=d1c, U11=U11):
-    """Energy dissipation. Rightward bound of resonant wedge."""
-    f = U0 * h * ((1 - S) / S) - (U0 / 2) * U11 ** 2 * d11 ** 2 / d1c ** 2 - Dc
+def eq38(U0=U0, S=S, h=h, d11=d11, d1c=d1c, U11=U11):
+    """Energy dissipation, with Dc = 0. Rightward bound of resonant wedge."""
+    f = h * ((1 - S) / S) - (U11 ** 2 / 2) * (d11 ** 2 / d1c ** 2)
     return f
 
 
 def eq39(U0=U0, d11=d11, U11=U11, U21=U21):
     """Bore criticality. Upper bound of resonant wedge."""
+    # TODO: verify this
     f = U0 + (U11 - U21) * (1 - 2 * d11) - ((1 - (U11 - U21) ** 2) * d11 * (1 - d11)) ** .5
     return f
 
@@ -100,7 +102,10 @@ def us():
     """Substitute out the bore speed to obtain relations for u11 and u12.
     """
     # TODO: check sign of roots
-    cb = sp.solve(eq31(), Cb)[1]
+    # I think this is the correct root for Cb [1]
+    # actually, taking the first one seems to get the right
+    # answers...
+    cb = sp.solve(eq31(), Cb)[0]
     u11 = sp.solve(eq33().subs(Cb, cb), U11)[0]
     u21 = sp.solve(eq34().subs(Cb, cb), U21)[0]
     return u11, u21
@@ -109,6 +114,10 @@ def us():
 def resonance():
     """Reduce the set of resonant equations to two equations in
     (S, d0, d11, U0, h, d1c)
+
+    This uses equations 3.1, 3.3, 3.4 (through us()), 3.5 and 3.6
+    so should represent two equations that hold over the whole
+    resonant region.
     """
     u11, u21 = us()
     # now use these in eq35 and eq36 to elim u11, u21, d1c
