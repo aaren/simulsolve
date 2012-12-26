@@ -165,18 +165,44 @@ def right_resonance(h_, d11_=None, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
     p35s, p36s = p35d.subs({S: S_, d0: d0_}), p36d.subs({S: S_, d0: d0_})
     p35sh, p36sh = p35s.subs(h, h_), p36s.subs(h, h_)
 
+    # return p35sh, p36sh
+
     if not d11_:
-        f35 = sp.lambdify((U0, d11), p35sh, "numpy")
-        f36 = sp.lambdify((U0, d11), p36sh, "numpy")
+        f35 = sp.lambdify((U0, d11, h), p35s, "numpy")
+        f36 = sp.lambdify((U0, d11, h), p36s, "numpy")
     else:
         p35sh, p36sh = p35sh.subs(d11, d11_), p36sh.subs(d11, d11_)
         f35 = sp.lambdify((U0), p35sh, "numpy")
         f36 = sp.lambdify((U0), p36sh, "numpy")
 
-    def E(p):
-        return f35(*p), f36(*p)
+    def E(p, h):
+        return f35(p[0], p[1], h), f36(p[0], p[1], h)
+    return E
     root = fsolve(E, guess)
     return root
+
+
+def upper_resonance(d0_=0.3, S_=0.75):
+    u11, u21 = us()
+    eq39s = eq39().subs({U11: u11, U21: u21})
+
+    D11 = sp.solve(eq39s, d11)
+    # this should be d11(U0, d0), but there will be two solns.
+    # FIXME: you can't do this. it isn't analytically soluble in
+    # d11.
+
+    # now we obtain two equations in (U0, h, S, d1c, d0)
+    # into which we sub in S, d0 to get two in (U0, h, d1c)
+    eq35d = eq35().subs({d11: D11[0], S: S_, d0: d0_})
+    eq36d = eq35().subs({d11: D11[0], S: S_, d0: d0_})
+    # for given h, these can be solved numerically
+    f35 = sp.lambdify((U0, d11, h), eq35d, "numpy")
+    f36 = sp.lambdify((U0, d11, h), eq35d, "numpy")
+    def E(p, h):
+        return f35(p[0], p[1], h), f36(p[0], p[1], h)
+    return E
+    root = fsolve(E, guess)
+
 
 
 def subbed():
