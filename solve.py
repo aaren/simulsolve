@@ -79,9 +79,9 @@ def eq36(h=h, S=S, d1c=d1c, d11=d11, U11=U11, U21=U21):
     All d_0 should be replaced with d_11. Corrected here.
     """
     f = (h ** 2 / (2 * S)) - h / (S) + (d1c ** 2 / 2) - (d11 ** 2 / 2) \
-            + d11 - d1c + d1c * h \
-            + (U11 ** 2) * (0.5 + (d11 ** 2 / d1c) - d11)\
-            + (U21 ** 2) * ((1 - d11) ** 2 / (1 - d1c - h) + d11 - 1)
+        + d11 - d1c + d1c * h \
+        + (U11 ** 2) * (0.5 + (d11 ** 2 / d1c) - d11)\
+        + (U21 ** 2) * ((1 - d11) ** 2 / (1 - d1c - h) + d11 - 1)
     return f
 
 
@@ -171,13 +171,8 @@ def right_resonance(U, d11_=None, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
     for u_ in U:
         p35su, p36su = p35s.subs(U0, u_), p36s.subs(U0, u_)
 
-        if not d11_:
-            f35 = sp.lambdify((h, d11), p35su, "numpy")
-            f36 = sp.lambdify((h, d11), p36su, "numpy")
-        else:
-            p35sh, p36sh = p35sh.subs(d11, d11_), p36sh.subs(d11, d11_)
-            f35 = sp.lambdify((U0), p35sh, "numpy")
-            f36 = sp.lambdify((U0), p36sh, "numpy")
+        f35 = sp.lambdify((h, d11), p35su, "numpy")
+        f36 = sp.lambdify((h, d11), p36su, "numpy")
 
         def E(p):
             return f35(p[0], p[1]), f36(p[0], p[1])
@@ -201,12 +196,13 @@ def upper_resonance(d0_=0.3, S_=0.75):
     eq36d = eq35().subs({d11: D11[0], S: S_, d0: d0_})
     # for given h, these can be solved numerically
     f35 = sp.lambdify((U0, d11, h), eq35d, "numpy")
-    f36 = sp.lambdify((U0, d11, h), eq35d, "numpy")
+    f36 = sp.lambdify((U0, d11, h), eq36d, "numpy")
+
     def E(p, h):
         return f35(p[0], p[1], h), f36(p[0], p[1], h)
-    return E
-    root = fsolve(E, guess)
 
+    return E
+    # root = fsolve(E, guess)
 
 
 def subbed():
@@ -309,6 +305,9 @@ def U(hv, d0v, d1cv):
 
 
 def U_subbed_poly():
+    """Eliminate U_0 from eqs 2.11 and 2.12 and cancel out terms
+    using the equality with zero.
+    """
     f1 = eq211()
     f2 = eq212()
     # rearrange f1 to get U0^2
