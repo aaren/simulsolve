@@ -151,9 +151,12 @@ def bore_amp_contour(d11_, h_, guess):
     return root
 
 
-def right_resonance(h_, d11_=None, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
+def right_resonance(U, d11_=None, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
     """For a given h, S, d0 and optionally d11, find the U0 that
     corresponds to the rightward bound of the resonant wedge.
+
+    TODO: change this to specifying U0 and finding h from a guess in (h, d11)
+
 
     Requires an initial guess for U0, d11 unless d11 is specified in
     which case the guess is for U0 only.
@@ -163,22 +166,23 @@ def right_resonance(h_, d11_=None, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
     p35, p36 = resonance()
     p35d, p36d = p35.subs({d1c: d1c_}), p36.subs({d1c: d1c_})
     p35s, p36s = p35d.subs({S: S_, d0: d0_}), p36d.subs({S: S_, d0: d0_})
-    p35sh, p36sh = p35s.subs(h, h_), p36s.subs(h, h_)
 
-    # return p35sh, p36sh
+    root = []
+    for u_ in U:
+        p35su, p36su = p35s.subs(U0, u_), p36s.subs(U0, u_)
 
-    if not d11_:
-        f35 = sp.lambdify((U0, d11, h), p35s, "numpy")
-        f36 = sp.lambdify((U0, d11, h), p36s, "numpy")
-    else:
-        p35sh, p36sh = p35sh.subs(d11, d11_), p36sh.subs(d11, d11_)
-        f35 = sp.lambdify((U0), p35sh, "numpy")
-        f36 = sp.lambdify((U0), p36sh, "numpy")
+        if not d11_:
+            f35 = sp.lambdify((h, d11), p35su, "numpy")
+            f36 = sp.lambdify((h, d11), p36su, "numpy")
+        else:
+            p35sh, p36sh = p35sh.subs(d11, d11_), p36sh.subs(d11, d11_)
+            f35 = sp.lambdify((U0), p35sh, "numpy")
+            f36 = sp.lambdify((U0), p36sh, "numpy")
 
-    def E(p, h):
-        return f35(p[0], p[1], h), f36(p[0], p[1], h)
-    return E
-    root = fsolve(E, guess)
+        def E(p):
+            return f35(p[0], p[1]), f36(p[0], p[1])
+        # return E
+        root.append(fsolve(E, guess))
     return root
 
 
