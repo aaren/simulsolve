@@ -10,25 +10,6 @@ h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
 Cb, U11, U21, d11, S = sp.symbols('Cb, U11, U21, d11, S')
 
 
-def sympy_solve():
-    h, U0, d1c = sp.S('h U0 d1c'.split())
-    d0 = 0.1
-    equations = [(U0) ** 2 * ((d0 ** 2 / d1c ** 3) + (1 - d0) ** 2 / (1 - d1c - d0 * h) ** 3) - 1,
-                 0.5 * (U0) ** 2 * ((d0 ** 2 / d1c ** 2) + (1 - d0) ** 2 / (1 - d1c - d0 * h)) + d1c + d0 * (h - 1)]
-    sp.nsolve(equations, (U0, h, d1c), (0.5, 0.5, 0.2))
-
-
-class Equation():
-    """A factory for the equations found in the paper"""
-    def __init__(self, eqno):
-        self.eqno = eqno
-
-    h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
-
-    def eq211():
-        pass
-
-
 def eq29(h=h, S=S, U0=U0, d0=d0, d1c=d1c):
     f = h * (1 - S) / S - (U0 ** 2 / 2) * (d0 ** 2 / d1c ** 2)
     return f
