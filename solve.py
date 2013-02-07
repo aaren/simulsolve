@@ -151,15 +151,11 @@ def bore_amp_contour(d11_, h_, guess):
     return root
 
 
-def right_resonance(U, d11_=None, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
-    """For a given h, S, d0 and optionally d11, find the U0 that
-    corresponds to the rightward bound of the resonant wedge.
+def right_resonance(U, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
+    """For a given U0, S, d0 and a guess in (h, d11), find the h
+    that corresponds to the rightward bound of the resonant wedge.
 
-    TODO: change this to specifying U0 and finding h from a guess in (h, d11)
-
-
-    Requires an initial guess for U0, d11 unless d11 is specified in
-    which case the guess is for U0 only.
+    TODO: how to select the correct root???
     """
     u11 = us()[0]
     d1c_ = sp.solve(eq38(), d1c)[1].subs(U11, u11)
@@ -183,26 +179,59 @@ def right_resonance(U, d11_=None, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
 
 def upper_resonance(d0_=0.3, S_=0.75):
     u11, u21 = us()
-    eq39s = eq39().subs({U11: u11, U21: u21})
+    A = eq39().subs({U11: u11, U21: u21})
+    # A(U0, d11, d0) - non linear in all of them
 
-    D11 = sp.solve(eq39s, d11)
-    # this should be d11(U0, d0), but there will be two solns.
-    # FIXME: you can't do this. it isn't analytically soluble in
-    # d11.
+    B = eq35().subs({U11: u11, U21: u21})
+    C = eq36().subs({U11: u11, U21: u21})
+    # B(h, d11, d1c, d0, U0)
+    # C(S, h, d11, d1c, d0, U0)
 
-    # now we obtain two equations in (U0, h, S, d1c, d0)
-    # into which we sub in S, d0 to get two in (U0, h, d1c)
-    eq35d = eq35().subs({d11: D11[0], S: S_, d0: d0_})
-    eq36d = eq35().subs({d11: D11[0], S: S_, d0: d0_})
-    # for given h, these can be solved numerically
-    f35 = sp.lambdify((U0, d11, h), eq35d, "numpy")
-    f36 = sp.lambdify((U0, d11, h), eq36d, "numpy")
+    # sub out the given stuff with a given U0 as well
+    # specifying U0 is tricky as the upper resonance
+    # limit is potentially degenerate in U0.
+    # However, specifying U0 does let us cancel d11
+    # easily (through A)
+    U0_ = 0.37
+    A1 = A.subs({S: S_, d0: d0_, U0: U0_})
+    fA1 = sp.lambdify((d11), A1, "numpy")
+    d11_ = max(brentq_scan(fA1, 0.4, 0.6, d=0.05))
+    B1 = B.subs({S: S_, d0: d0_, U0: U0_, d11: d11_})
+    C1 = C.subs({S: S_, d0: d0_, U0: U0_, d11: d11_})
 
-    def E(p, h):
-        return f35(p[0], p[1], h), f36(p[0], p[1], h)
+    fB1 = sp.lambdify((h, d1c), B1, "numpy")
+    fC1 = sp.lambdify((h, d1c), C1, "numpy")
 
-    return E
-    # root = fsolve(E, guess)
+    def fBC(p):
+        return fB1(*p), fC1(*p)
+
+    # make a guess in (h, d1c)
+    guess = (0.1, 0.1)
+    return fsolve(fBC, guess)
+
+
+def brentq_scan(f, a, b, d=None, n=1):
+    """Uses the brentq optimization routine to look for multiple
+    roots on the interval [a, b], by dividing it into either smaller
+    intervals of width d or by dividing it into a given number of
+    subsections.
+
+    Returns a list of roots
+    """
+    if d:
+        n = int((b - a) / d)
+    if not d:
+        d = int((b - a) / n)
+    ints = np.linspace(a, b, n)
+    sints = ints + d
+    roots = []
+    for a1, b1 in zip(ints, sints):
+        try:
+            roots.append(brentq(f, a1, b1))
+        # catch no sign change on interval
+        except ValueError:
+            pass
+    return roots
 
 
 def subbed():
