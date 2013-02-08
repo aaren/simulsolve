@@ -66,9 +66,10 @@ def eq36(h=h, S=S, d1c=d1c, d11=d11, U11=U11, U21=U21):
     return f
 
 
-def eq38(U0=U0, S=S, h=h, d11=d11, d1c=d1c, U11=U11):
-    """Energy dissipation, with Dc = 0. Rightward bound of resonant wedge."""
-    f = h * ((1 - S) / S) - (U11 ** 2 / 2) * (d11 ** 2 / d1c ** 2)
+def eq38(U0=U0, S=S, h=h, d11=d11, d1c=d1c, U11=U11, Dc=0):
+    """Energy dissipation.
+    Dc=0 gives rightward bound of resonant wedge."""
+    f = h * ((1 - S) / S) - (U11 ** 2 / 2) * (d11 ** 2 / d1c ** 2) - Dc / U0
     return f
 
 
@@ -80,7 +81,8 @@ def eq39(U0=U0, d11=d11, U11=U11, U21=U21):
 
 
 def us():
-    """Substitute out the bore speed to obtain relations for u11 and u12.
+    """Substitute out the bore speed to obtain relations
+    for u11 and u12 as f(U0, d11, d0).
     """
     # TODO: check sign of roots
     # I think this is the correct root for Cb [1]
@@ -130,6 +132,108 @@ def bore_amp_contour(d11_, h_, guess):
         return f35(*p), f36(*p)
     root = fsolve(E, guess)
     return root
+
+
+def d11_contours():
+    """The contours in d11 are computed by varying the
+    dissipation in eq 3.8.
+
+    Zero dissipation defines the right edge of the
+    resonant wedge. Inside the wedge the dissipation
+    varies.
+
+    The upper bound of the resonant wedge is given by
+    a d11 contour.
+    """
+    pass
+
+
+def wh_right_resonance(S_=0.75, d0_=0.3):
+    """The method used by White and Helfrich to find the
+    right bound of the resonant wedge is as follows.
+
+    Equations 3.1, 3.3, 3.4, 3.4 and 3.6 are valid at all
+    points inside the resonant wedge. Equation 3.8 is valid
+    at all points if the dissipation is left to vary. The
+    dissipation is zero along the rightward bound.
+
+    Equation 3.9 is used as a criterion to determine when
+    resonant solutions can no longer exist, i.e. for each
+    solution point we find we check whether 3.9 is valid.
+
+    3.3 and 3.4 are used to subsitute out U11 and U21,
+    leaving 4 equations in 7 unknowns.
+
+    We specify d0 and S and vary U0 incrementally,
+    leaving 4 equations in 4 unknowns, (h, d11, d1c, Cb).
+
+    We can eliminate Cb using 3.1 and any of (h, d11, d1c)
+    using 3.8 (given a value for the dissipation, zero
+    along the right bound).
+
+    This reduces the system to 2 equations in two unknowns
+    for a given value of U0.
+
+    Given an initial guess we can use fsolve to solve
+    this system.
+
+    We do this for a range of U0 from the subcritical bound
+    up to the upper limit U0=0.5. To find the first point at
+    the lower limit we can use pairs of (U0, h) known to lie
+    along the subcritical bound as the initial guess and
+    begin to deviate from the bound when the guess is close to
+    the solution.
+
+    Along the right branch, we use the previous solution
+    as the next guess whilst incrementing U0.
+
+    The upper limit of the right branch is found when the
+    long wave speed through the bore, given by 3.9, changes
+    sign.
+
+    Thus we evaluate 3.9 for each point found on the right
+    branch and terminate the branch when this approaches
+    zero.
+
+    Inputs: values for d0 and S.
+
+    Returns: an array of points on the branch. For each point,
+             all of the variables are evaluated.
+    """
+    # u11, u21 as f(U0, d0, d11)
+    u11, u21 = us()
+    # solve eq38 for d1c (positive root)
+    # with dissipation equal to zero
+    # and sub out u11 to give d1c = f(S, h, d11)
+    d1c_ = sp.solve(eq38(Dc=0), d1c)[1].subs({U11: u11})
+    # now sub out S, d0, d1c, u11, u21 from eqs 3.5 and 3.6
+    # have to do S and d0 in additional step to get them all
+    subs = {d1c: d1c_, U11: u11, U21: u21}
+    s35 = eq35().subs(subs).subs({S: S_, d0: d0_})
+    s36 = eq36().subs(subs).subs({S: S_, d0: d0_})
+    # s35 and s36 are two equations in (h, d11, U0)
+    f35 = sp.lambdify((h, d11, U0), s35, "numpy")
+    f36 = sp.lambdify((h, d11, U0), s36, "numpy")
+
+    # function for fsolve
+    def E(p, U0):
+        return f35(*p, U0=U0), f36(*p, U0=U0)
+    # find the initial guess using the subcritical boundary
+    # TODO: write f_subcrit
+    def f_subcrit():
+        """Compute the subcritical bound. Use points along the
+        bound to give as guess to fsolve. When fsolve soln
+        comes close to the guess, return the current guess.
+        """
+    _h, _d11, _U0 = f_subcrit()
+    guess = _h, _d11
+    p = guess
+    branch = []
+    U = np.arange(_U0, 0.5, 0.01)
+    for u0 in U:
+        p = fsolve(p, args=(u0))
+        branch.append(p)
+    return branch
 
 
 def right_resonance(U, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
