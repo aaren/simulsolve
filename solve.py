@@ -79,7 +79,7 @@ def eq39(U0=U0, d11=d11, U11=U11, U21=U21):
     return f
 
 
-def c0(d0=d0):
+def longwave_c0(d0=d0):
     """Longwave speed given the interface depth d0"""
     return (d0 * (1 - d0)) ** .5
 
@@ -259,20 +259,21 @@ def U_subbed_poly():
 
 
 def fast_solve(H, d0_=0.1, combined_poly=None):
+    """Find the branches of solutions to two layer flow
+    over topography for a given interface depth d0 and
+    an array of topography heights H.
+
+    Returns a list of arrays of U corresponding to H,
+    with as many list elements as there are roots of the
+    equations (4).
+    """
     if not combined_poly:
-        combined = U_subbed_poly()
-    combined = combined_poly
-    # for h_ in np.linspace(0, 1):
-        # p = sp.Poly(combined.subs({h: h_, d0: d0_}), d1c)
-        # D1c = np.roots(p.coeffs())
-        # u = [U(h_, d0_, d1c_) for d1c_ in D1c
-                    # if np.isreal(d1c_) and (0 < d1c_.real < h_)]
-    # TODO: lambdify, work over array of h
+        combined_poly = U_subbed_poly()
     # we want to get the coefficients, but also to be able to
     # evaluate over an input array. the latter requires that we
     # use lambdify.
     # we can do this!
-    coeff = lambdify((d0, h), sp.Poly(combined, d1c).coeffs(), "numpy")
+    coeff = lambdify((d0, h), sp.Poly(combined_poly, d1c).coeffs(), "numpy")
     d0_ = np.array([d0_])
     coeffs = np.array(coeff(*np.meshgrid(d0_, H)))
     # now we have a list of arrays of coefficients, each array
@@ -281,13 +282,55 @@ def fast_solve(H, d0_=0.1, combined_poly=None):
     Roots = np.array([np.roots(coeffs[:, i].squeeze()) for i in range(len(H))])
     # Now we work out what U would be
     Uf = lambdify((d0, h, d1c), U(h=h, d0=d0, d1c=d1c), "numpy")
-    U_sol = [Uf(d0_, H, Roots[:, i]) for i in range(4)]
+    U_sol = [Uf(d0_, H, Roots[:, i]) for i in range(Roots.shape[1])]
     return U_sol
 
 
-    # what we want is an array of h and 3 arrays of corresponding
-    # roots in U. then if we also have an input array of d0, we
-    # can have 2d arrays in U.
+def branch_select(U, H, d0):
+    """Given a load of values of U and corresponding H,
+    for a given d0, find the combinations of (U,H) that
+    define the upper / lower limits of the critical flow
+    region in two layer flow over topography.
+
+    Inputs: U is an array of velocities.
+            H is an array of heights that correspond to U.
+            d0 is the interface depth (scalar)
+
+    Returns a tuple (lower, upper) where lower and upper
+    are tuples of the arrays of U, H that satisfy the
+    criterion.
+
+    The criterion for branch selection is 0 < h < d0 for
+    both; 0 < U0 < c0 for the lower branch; c0 < U0 < 0.5
+    for the upper branch.
+
+    We use 0.5 as the upper limit as this is the speed of
+    the conjugate state in two layers.
+
+    c0 = ((1 - d0) * d0 ) ** .5 is the liner longwave speed
+    on the interface.
+    """
+    # longwave speed
+    c0 = longwave_c0(d0)
+
+    cond_all = np.logical_and(0 < H, H < d0)
+    cond_lower = np.logical_and(cond_all, np.logical_and(0 < U, U < c0))
+    cond_upper = np.logical_and(cond_all, np.logical_and(c0 < U, U < 0.5))
+
+    lower_branch = (U[cond_lower], H[cond_lower])
+    upper_branch = (U[cond_upper], H[cond_upper])
+
+    return lower_branch, upper_branch
+
+
+def critical_bounds(H, d0):
+    U_sol = fast_solve(H, d0)
+    # Put all the U into a single array with a corresponding H array
+    U = np.concatenate(U_sol)
+    # H to match the U
+    Hu = np.concatenate([H for Us in U_sol])
+    lower, upper = branch_select(U, Hu, d0)
+    return lower, upper
 
 
 def Uh(d0, U_sol, h_sol, D0):
@@ -309,11 +352,11 @@ def plot_branch(ax, n, U, H):
     return ax
 
 
-def main():
+def main(d0_=0.3):
     H = np.linspace(0.001, 0.999, 1000)
     poly = U_subbed_poly()
-    Usol = fast_solve(H, d0_=0.1, combined_poly=poly)
-    print "extracting U and h at d0 = 0.1"
+    Usol = fast_solve(H, d0_=d0_, combined_poly=poly)
+    print "extracting U and h at d0 = %s" % d0_
     # U, H = Uh(0.1, Usol, hsol, D0)
     print "plotting first solution branch..."
     fig = plt.figure()
