@@ -79,6 +79,11 @@ def eq39(U0=U0, d11=d11, U11=U11, U21=U21):
     return f
 
 
+def c0(d0=d0):
+    """Longwave speed given the interface depth d0"""
+    return (d0 * (1 - d0)) ** .5
+
+
 def us():
     """Substitute out the bore speed to obtain relations
     for u11 and u12 as f(U0, d11, d0).
@@ -275,7 +280,7 @@ def fast_solve(H, d0_=0.1, combined_poly=None):
     # np.roots can only take 1d input so we have to be explicit
     Roots = np.array([np.roots(coeffs[:, i].squeeze()) for i in range(len(H))])
     # Now we work out what U would be
-    Uf = lambdify((d0, h, d1c), U(h, d0, d1c), "numpy")
+    Uf = lambdify((d0, h, d1c), U(h=h, d0=d0, d1c=d1c), "numpy")
     U_sol = [Uf(d0_, H, Roots[:, i]) for i in range(4)]
     return U_sol
 
