@@ -67,8 +67,7 @@ def eq36(h=h, S=S, d1c=d1c, d11=d11, U11=U11, U21=U21):
 
 
 def eq38(U0=U0, S=S, h=h, d11=d11, d1c=d1c, U11=U11, Dc=0):
-    """Energy dissipation.
-    Dc=0 gives rightward bound of resonant wedge."""
+    """Energy dissipation. Dc=0 gives rightward bound of resonant wedge."""
     f = h * ((1 - S) / S) - (U11 ** 2 / 2) * (d11 ** 2 / d1c ** 2) - Dc / U0
     return f
 
@@ -92,46 +91,6 @@ def us():
     u11 = sp.solve(eq33().subs(Cb, cb), U11)[0]
     u21 = sp.solve(eq34().subs(Cb, cb), U21)[0]
     return u11, u21
-
-
-def resonance():
-    """Reduce the set of resonant equations to two equations in
-    (S, d0, d11, U0, h, d1c)
-
-    This uses equations 3.1, 3.3, 3.4 (through us()), 3.5 and 3.6
-    so should represent two equations that hold over the whole
-    resonant region.
-    """
-    u11, u21 = us()
-    # now use these in eq35 and eq36 to elim u11, u21, d1c
-    p35 = eq35().subs({U11: u11, U21: u21})
-    p36 = eq36().subs({U11: u11, U21: u21})
-    # should be two equations in 6 unknowns (S, d0, d11, U0, h, d1c)
-
-    # u21b = sp.solve(eq35(), U21)[0]
-    # right_bound = eq36().subs({U21: u21b, U21: u11, d1c: d1c_})
-    return p35, p36
-
-
-def bore_amp_contour(d11_, h_, guess):
-    """Find a specific contour of bore amplitude d11_ for
-    given h_, starting with the guess in (U0, d1c).
-    Returns the converged U0, d1c.
-    """
-    S_ = 0.75
-    d0_ = 0.3
-    p35, p36 = resonance()
-    p35d, p36d = p35.subs({d11: d11_}), p36.subs({d11: d11_})
-    p35s, p36s = p35d.subs({S: S_, d0: d0_}), p36d.subs({S: S_, d0: d0_})
-    p35sh, p36sh = p35s.subs(h, h_), p36s.subs(h, h_)
-
-    f35 = sp.lambdify((U0, d1c), p35sh, "numpy")
-    f36 = sp.lambdify((U0, d1c), p36sh, "numpy")
-
-    def E(p):
-        return f35(*p), f36(*p)
-    root = fsolve(E, guess)
-    return root
 
 
 def d11_contours():
@@ -220,6 +179,7 @@ def wh_right_resonance(S_=0.75, d0_=0.3):
         return f35(*p, U0=U0), f36(*p, U0=U0)
     # find the initial guess using the subcritical boundary
     # TODO: write f_subcrit
+
     def f_subcrit():
         """Compute the subcritical bound. Use points along the
         bound to give as guess to fsolve. When fsolve soln
@@ -234,65 +194,6 @@ def wh_right_resonance(S_=0.75, d0_=0.3):
         p = fsolve(p, args=(u0))
         branch.append(p)
     return branch
-
-
-def right_resonance(U, S_=0.75, d0_=0.3, guess=(0.2, 0.2)):
-    """For a given U0, S, d0 and a guess in (h, d11), find the h
-    that corresponds to the rightward bound of the resonant wedge.
-
-    TODO: how to select the correct root???
-    """
-    u11 = us()[0]
-    d1c_ = sp.solve(eq38(), d1c)[1].subs(U11, u11)
-    p35, p36 = resonance()
-    p35d, p36d = p35.subs({d1c: d1c_}), p36.subs({d1c: d1c_})
-    p35s, p36s = p35d.subs({S: S_, d0: d0_}), p36d.subs({S: S_, d0: d0_})
-
-    root = []
-    for u_ in U:
-        p35su, p36su = p35s.subs(U0, u_), p36s.subs(U0, u_)
-
-        f35 = sp.lambdify((h, d11), p35su, "numpy")
-        f36 = sp.lambdify((h, d11), p36su, "numpy")
-
-        def E(p):
-            return f35(p[0], p[1]), f36(p[0], p[1])
-        # return E
-        root.append(fsolve(E, guess))
-    return root
-
-
-def upper_resonance(d0_=0.3, S_=0.75):
-    u11, u21 = us()
-    A = eq39().subs({U11: u11, U21: u21})
-    # A(U0, d11, d0) - non linear in all of them
-
-    B = eq35().subs({U11: u11, U21: u21})
-    C = eq36().subs({U11: u11, U21: u21})
-    # B(h, d11, d1c, d0, U0)
-    # C(S, h, d11, d1c, d0, U0)
-
-    # sub out the given stuff with a given U0 as well
-    # specifying U0 is tricky as the upper resonance
-    # limit is potentially degenerate in U0.
-    # However, specifying U0 does let us cancel d11
-    # easily (through A)
-    U0_ = 0.37
-    A1 = A.subs({S: S_, d0: d0_, U0: U0_})
-    fA1 = sp.lambdify((d11), A1, "numpy")
-    d11_ = max(brentq_scan(fA1, 0.4, 0.6, d=0.05))
-    B1 = B.subs({S: S_, d0: d0_, U0: U0_, d11: d11_})
-    C1 = C.subs({S: S_, d0: d0_, U0: U0_, d11: d11_})
-
-    fB1 = sp.lambdify((h, d1c), B1, "numpy")
-    fC1 = sp.lambdify((h, d1c), C1, "numpy")
-
-    def fBC(p):
-        return fB1(*p), fC1(*p)
-
-    # make a guess in (h, d1c)
-    guess = (0.1, 0.1)
-    return fsolve(fBC, guess)
 
 
 def brentq_scan(f, a, b, d=None, n=1):
@@ -329,92 +230,11 @@ def subbed():
     return f3
 
 
-def simplify():
-    exp = subbed()
-    simp = sp.simplify(exp)
-    # simp = sp.collect(exp, d1c)
-    print simp
-
-
-def so_sol(d0v=0.1):
-    h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
-    f1 = eq211(h, U0, d1c, d0)
-    f2 = eq212(h, U0, d1c, d0)
-
+def U(h=h, d0=d0, d1c=d1c):
+    f1 = eq211(h=h, d0=d0, d1c=d1c)
     # rearrange f1 to get U0^2
     U2 = ((f1 + 1) / U0 ** 2) ** -1
-    # substitute this into f2
-    f3 = f2.subs(U0 ** 2, U2)
-
-    # f3 is now f(h, d1c) only.
-    # integer exponents --> rational fraction
-    # so we only need to take the numerator of f3 as we are
-    # looking for where it goes to 0. this is a polynomial in
-    # (h, d1c, d0)
-    print "constructing polynomial in h..."
-    p3 = sp.fraction(f3.cancel())[0]
-
-    # subsitute in a value of d0 (don't actually have to, can leave
-    # this unconstrained if we want).
-    hd1c = p3.subs(d0, d0v)
-    U2 = U2.subs(d0, d0v)
-    # hd1c = p3
-
-    # hd1c is a quartic in h and a quintic in d1c.  there is no
-    # algorithm to solve a quintic, but quartics are soluble.
-    print "solving for h..."
-    hsol = sp.solve(hd1c, h)
-    return hsol, U2
-
-
-def brent_sol():
-    f1 = eq211()
-    f2 = eq212()
-
-    h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
-    # rearrange f1 to get U0^2
-    U2 = ((f1 + 1) / U0 ** 2) ** -1
-    # substitute this into f2
-    f3 = f2.subs(U0 ** 2, U2)
-
-    # f3 is now f(h, d1c) only.
-    # integer exponents --> rational fraction
-    # so we only need to take the numerator of f3 as we are
-    # looking for where it goes to 0. this is a polynomial in
-    # (h, d1c, d0)
-    print "constructing polynomial in h..."
-    p3 = sp.fraction(f3.cancel())[0]
-
-    # subsitute in a value of d0 (don't actually have to, can leave
-    # this unconstrained if we want).
-    d0v = 0.1
-    hd1c = p3.subs(d0, d0v)
-
-    # hd1c is a quartic in h and a quintic in d1c.  there is no
-    # algorithm to solve a quintic, but quartics are soluble.
-
-    # let's solve the quintic numerically over a range of h
-    H = np.linspace(0.1, 1, 10)
-
-    quintic = lambdify((d1c, h), hd1c, "numpy")
-    return quintic
-
-    c0 = (d0v * (1 - d0v)) ** .5
-    print "applying brentq"
-    # the subcritical boundary is on the interval [0, c0]
-    # yes, but this boundary is in U and the quintic is in d1c!
-    U_sub = np.array([brentq(quintic, 0, c0, args=(h)) for h in H])
-    # supercritical boundary is on [c0, 0.5]
-    U_super = np.array([brentq(quintic, c0, 0.5, args=(h)) for h in H])
-
-    return U_sub, U_super
-
-
-def U(hv, d0v, d1cv):
-    f1 = eq211()
-    # rearrange f1 to get U0^2
-    U2 = ((f1 + 1) / U0 ** 2) ** -1
-    U = U2.subs({h: hv, d0: d0v, d1c: d1cv}) ** .5
+    U = U2 ** .5
     return U
 
 
@@ -422,12 +242,7 @@ def U_subbed_poly():
     """Eliminate U_0 from eqs 2.11 and 2.12 and cancel out terms
     using the equality with zero.
     """
-    f1 = eq211()
-    f2 = eq212()
-    # rearrange f1 to get U0^2
-    U2 = ((f1 + 1) / U0 ** 2) ** -1
-    # substitute this into f2
-    f3 = f2.subs(U0 ** 2, U2)
+    f3 = subbed()
     # f3 is now f(h, d1c) only.
     # integer exponents --> rational fraction
     # so we only need to take the numerator of f3 as we are
@@ -459,8 +274,6 @@ def fast_solve(H, d0_=0.1, combined_poly=None):
     # having the dimension of H
     # np.roots can only take 1d input so we have to be explicit
     Roots = np.array([np.roots(coeffs[:, i].squeeze()) for i in range(len(H))])
-    # Roots is now a 2d array of first dimension H. That is, for h
-    # in H, roots in d1c are given by roots in Roots.
     # Now we work out what U would be
     Uf = lambdify((d0, h, d1c), U(h, d0, d1c), "numpy")
     U_sol = [Uf(d0_, H, Roots[:, i]) for i in range(4)]
@@ -470,59 +283,6 @@ def fast_solve(H, d0_=0.1, combined_poly=None):
     # what we want is an array of h and 3 arrays of corresponding
     # roots in U. then if we also have an input array of d0, we
     # can have 2d arrays in U.
-
-
-def poly_solve(p3, hv, d0v):
-    """for given d0, h find roots of the polynomial p3"""
-    phd = p3.subs({h: hv, d0: d0v})
-    coeffs = sp.poly(phd, d1c).coeffs()
-    # TODO: substitute the coeffs just before calculating the roots
-    roots = np.roots(coeffs)
-    # and throw out those that aren't physical.
-    physical_roots = [r for r in roots if (0 < r < (1 - hv))]
-    # then calculate U0 from the given d0, h for each of the roots
-    # in d1c
-    return roots
-    return physical_roots
-
-
-def h_eval(hsol, U2, n=1000):
-    h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
-    # hsol is 4 roots of a quartic. for each of these roots we need to
-    # evaluate h over a fine range of physical d1c to give an array
-    # of possible (h, d1c) for each root.
-
-    # evaluation over an array is slow using sp. we use lambdify
-    # to convert to a function that can be used for fast evaluation.
-    # solF is a list of functions of d1c and d0 representing the roots
-    # solF = [lambdify((d1c, d0), sol) for sol in hsol]
-    solF = [lambdify((d1c), sol, "numpy") for sol in hsol]
-
-    # D0 = np.linspace(0.001, 1, 1000)
-    D1c = np.linspace(0.001 + 0j, 1, n)
-    # grid = np.meshgrid(D1c, D0)
-    print "evaluating h over grid"
-    # h_roots_eval = [f(*grid) for f in solF]
-    h_roots_eval = [f(D1c) for f in solF]
-
-    # we then subsitute these arrays of h, d1c, d0 back into f1 or f2
-    # to find the corresponding U0, giving us an array of (U0, h,
-    # d1c) for each root.
-
-    U = lambdify((h, d1c), U2 ** .5, "numpy")
-    print "evaluating U over grid"
-    Usol = [U(h, D1c) for h in h_roots_eval]
-
-    # Useful outputs are
-    # D0 - array of d0
-    # D1c - array of d1c
-    # h_roots_eval - list of arrays of h evaluated over a grid made
-    #                from D0 and D1c, one element per root of the h
-    #                quartic.
-    # Usol - U0 that correspond to the h in h_roots_eval
-
-    return Usol, h_roots_eval
-    # return Usol, h_roots_eval, D0
 
 
 def Uh(d0, U_sol, h_sol, D0):
