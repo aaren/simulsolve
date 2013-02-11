@@ -181,24 +181,53 @@ def wh_right_resonance(S_=0.75, d0_=0.3):
 
     # function for fsolve
     def E(p, U0):
+        """p is a tuple (h, d11)"""
         return f35(*p, U0=U0), f36(*p, U0=U0)
-    # find the initial guess using the subcritical boundary
-    # TODO: write f_subcrit
 
-    def f_subcrit():
-        """Compute the subcritical bound. Use points along the
-        bound to give as guess to fsolve. When fsolve soln
-        comes close to the guess, return the current guess.
-        """
-    _h, _d11, _U0 = f_subcrit()
+    # find the initial guess using the subcritical boundary
+    _h, _d11, _U0 = f_subcrit(E, d0=d0_, d=0.005)
+    print("Starting branch at ({u}, {h})".format(u=_U0, h=_h))
     guess = _h, _d11
     p = guess
     branch = []
-    U = np.arange(_U0, 0.5, 0.01)
+    U = np.linspace(_U0, 0.5, 50)
     for u0 in U:
-        p = fsolve(p, args=(u0))
-        branch.append(p)
+        p = fsolve(E, p, args=(u0))
+        branch.append((p[0], p[1], u0))
     return branch
+
+
+def f_subcrit(F, d0, d=0.01, bound=None):
+    """Compute the intersection of the right resonant boundary with
+    the subcritical bound. Use points along the bound to give as
+    guess to fsolve. When fsolve soln comes close to the guess,
+    return the current guess.
+
+    F((h, d11), u0) is a function for fsolve to use to evaluate
+    the rightward bound.
+
+    d0 is the interface depth
+
+    d is half the width of the window that the guess must fall within
+
+    bound is a tuple (U, H) where U and H are arrays of the velocity
+    and current depth along the subcritical boundary.
+    """
+    if not bound:
+        lower_branch, upper_branch = critical_bounds(d0)
+    elif bound:
+        lower_branch = bound
+    # sort by u
+    p = lower_branch[0].argsort()
+    bound_U = lower_branch[0][p]
+    bound_h = lower_branch[1][p]
+    for i, u in enumerate(bound_U):
+        h = bound_h[i]
+        # use d0 as guess for d11
+        _h, _d11 = fsolve(F, (h, d0), args=(u,))
+        if h - d < _h < h + d:
+            return h, _d11, u
+    return False
 
 
 def brentq_scan(f, a, b, d=None, n=1):
@@ -323,7 +352,13 @@ def branch_select(U, H, d0):
     return lower_branch, upper_branch
 
 
-def critical_bounds(H, d0):
+def critical_bounds(d0, H=None):
+    if not H:
+        # h can be greater than d0 (current deeper than the
+        # interface), but not for subcritical solutions. Deeper than
+        # d0 corresponds to solutions in the critical or
+        # supercritical regions.
+        H = np.linspace(0, d0, 50)
     U_sol = fast_solve(H, d0)
     # Put all the U into a single array with a corresponding H array
     U = np.concatenate(U_sol)
