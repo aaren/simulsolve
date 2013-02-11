@@ -6,10 +6,21 @@ import matplotlib.pyplot as plt
 from scipy.optimize import brentq, fsolve
 from sympy.utilities.lambdify import lambdify
 
+# define symbols used by sympy
+# h - current depth
+# U0 - front speed
+# d1c - depth of first layer above current
+# d0 - depth of undisturbed first layer (initial interface depth)
 h, U0, d1c, d0 = sp.symbols('h, U0, d1c, d0')
+# Cb - bore speed
+# U11 - fluid velocity in first layer through bore
+# U21 - fluid velocity in second layer through bore
+# d11 - bore amplitude
+# S - stratification parameter (rho1 - rho2) / (rhoc - rho2)
 Cb, U11, U21, d11, S = sp.symbols('Cb, U11, U21, d11, S')
 
 
+### BASE EQUATIONS ###
 def eq29(h=h, S=S, U0=U0, d0=d0, d1c=d1c):
     f = h * (1 - S) / S - (U0 ** 2 / 2) * (d0 ** 2 / d1c ** 2)
     return f
@@ -83,6 +94,42 @@ def longwave_c0(d0=d0):
     """Longwave speed given the interface depth d0"""
     return (d0 * (1 - d0)) ** .5
 
+### /BASE EQUATIONS ###
+
+
+### REARRANGEMENTS ###
+def subbed():
+    f1 = eq211()
+    f2 = eq212()
+    # rearrange f1 to get U0^2
+    U2 = ((f1 + 1) / U0 ** 2) ** -1
+    # substitute this into f2
+    f3 = f2.subs(U0 ** 2, U2)
+    return f3
+
+
+def U(h=h, d0=d0, d1c=d1c):
+    f1 = eq211(h=h, d0=d0, d1c=d1c)
+    # rearrange f1 to get U0^2
+    U2 = ((f1 + 1) / U0 ** 2) ** -1
+    U = U2 ** .5
+    return U
+
+
+def U_subbed_poly():
+    """Eliminate U_0 from eqs 2.11 and 2.12 and cancel out terms
+    using the equality with zero.
+    """
+    f3 = subbed()
+    # f3 is now f(h, d1c) only.
+    # integer exponents --> rational fraction
+    # so we only need to take the numerator of f3 as we are
+    # looking for where it goes to 0. this is a polynomial in
+    # (h, d1c, d0)
+    print "constructing polynomial in d1c..."
+    p3 = sp.fraction(f3.cancel())[0]
+    return p3
+
 
 def us():
     """Substitute out the bore speed to obtain relations
@@ -96,6 +143,14 @@ def us():
     u11 = sp.solve(eq33().subs(Cb, cb), U11)[0]
     u21 = sp.solve(eq34().subs(Cb, cb), U21)[0]
     return u11, u21
+
+
+def resonant_criterion():
+    """Transforms eq 3.9 into a function of (d0, d11, U0)"""
+    u11, u21 = us()
+    crit = eq39(U11=u11, U21=u21)
+    return crit
+### /REARRANGEMENTS ###
 
 
 def d11_contours():
@@ -252,39 +307,6 @@ def brentq_scan(f, a, b, d=None, n=1):
         except ValueError:
             pass
     return roots
-
-
-def subbed():
-    f1 = eq211()
-    f2 = eq212()
-    # rearrange f1 to get U0^2
-    U2 = ((f1 + 1) / U0 ** 2) ** -1
-    # substitute this into f2
-    f3 = f2.subs(U0 ** 2, U2)
-    return f3
-
-
-def U(h=h, d0=d0, d1c=d1c):
-    f1 = eq211(h=h, d0=d0, d1c=d1c)
-    # rearrange f1 to get U0^2
-    U2 = ((f1 + 1) / U0 ** 2) ** -1
-    U = U2 ** .5
-    return U
-
-
-def U_subbed_poly():
-    """Eliminate U_0 from eqs 2.11 and 2.12 and cancel out terms
-    using the equality with zero.
-    """
-    f3 = subbed()
-    # f3 is now f(h, d1c) only.
-    # integer exponents --> rational fraction
-    # so we only need to take the numerator of f3 as we are
-    # looking for where it goes to 0. this is a polynomial in
-    # (h, d1c, d0)
-    print "constructing polynomial in d1c..."
-    p3 = sp.fraction(f3.cancel())[0]
-    return p3
 
 
 def fast_solve(H, d0_=0.1, combined_poly=None):
