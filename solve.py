@@ -153,21 +153,131 @@ def resonant_criterion():
 ### /REARRANGEMENTS ###
 
 
-def d11_contours():
-    """The contours in d11 are computed by varying the
-    dissipation in eq 3.8.
+### CRITICAL BOUNDS ###
+def fast_solve(H, d0_=0.1, combined_poly=None):
+    """Find the branches of solutions to two layer flow
+    over topography for a given interface depth d0 and
+    an array of topography heights H.
 
-    Zero dissipation defines the right edge of the
-    resonant wedge. Inside the wedge the dissipation
-    varies.
-
-    The upper bound of the resonant wedge is given by
-    a d11 contour.
+    Returns a list of arrays of U corresponding to H,
+    with as many list elements as there are roots of the
+    equations (4).
     """
-    pass
+    if not combined_poly:
+        combined_poly = U_subbed_poly()
+    # we want to get the coefficients, but also to be able to
+    # evaluate over an input array. the latter requires that we
+    # use lambdify.
+    # we can do this!
+    coeff = lambdify((d0, h), sp.Poly(combined_poly, d1c).coeffs(), "numpy")
+    d0_ = np.array([d0_])
+    coeffs = np.array(coeff(*np.meshgrid(d0_, H)))
+    # now we have a list of arrays of coefficients, each array
+    # having the dimension of H
+    # np.roots can only take 1d input so we have to be explicit
+    Roots = np.array([np.roots(coeffs[:, i].squeeze()) for i in range(len(H))])
+    # Now we work out what U would be
+    Uf = lambdify((d0, h, d1c), U(h=h, d0=d0, d1c=d1c), "numpy")
+    U_sol = [Uf(d0_, H, Roots[:, i]) for i in range(Roots.shape[1])]
+    return U_sol
 
 
-def wh_right_resonance(S_=0.75, d0_=0.3):
+def branch_select(U, H, d0):
+    """Given a load of values of U and corresponding H,
+    for a given d0, find the combinations of (U,H) that
+    define the upper / lower limits of the critical flow
+    region in two layer flow over topography.
+
+    Inputs: U is an array of velocities.
+            H is an array of heights that correspond to U.
+            d0 is the interface depth (scalar)
+
+    Returns a tuple (lower, upper) where lower and upper
+    are tuples of the arrays of U, H that satisfy the
+    criterion.
+
+    The criterion for branch selection is 0 < h < d0 for
+    both; 0 < U0 < c0 for the lower branch; c0 < U0 < 0.5
+    for the upper branch.
+
+    We use 0.5 as the upper limit as this is the speed of
+    the conjugate state in two layers.
+
+    c0 = ((1 - d0) * d0 ) ** .5 is the liner longwave speed
+    on the interface.
+    """
+    # longwave speed
+    c0 = longwave_c0(d0)
+
+    cond_all = np.logical_and(0 < H, H < d0)
+    cond_lower = np.logical_and(cond_all, np.logical_and(0 < U, U < c0))
+    cond_upper = np.logical_and(cond_all, np.logical_and(c0 < U, U < 0.5))
+
+    lower_branch = (U[cond_lower], H[cond_lower])
+    upper_branch = (U[cond_upper], H[cond_upper])
+
+    # ensure sorted w.r.t h
+    p = lower_branch[1].argsort()
+    q = upper_branch[1].argsort()
+    sort_lower = (lower_branch[0][p], lower_branch[1][p])
+    sort_upper = (upper_branch[0][q], upper_branch[1][q])
+
+    return sort_lower, sort_upper
+
+
+def critical_bounds(d0, H=None):
+    if H is None:
+        # h can be greater than d0 (current deeper than the
+        # interface), but not for subcritical solutions. Deeper than
+        # d0 corresponds to solutions in the critical or
+        # supercritical regions.
+        H = np.linspace(0, d0, 50)
+    U_sol = fast_solve(H, d0)
+    # Put all the U into a single array with a corresponding H array
+    U = np.concatenate(U_sol)
+    # H to match the U
+    Hu = np.concatenate([H for Us in U_sol])
+    lower, upper = branch_select(U, Hu, d0)
+    return lower, upper
+
+### /CRITICAL BOUNDS ###
+
+
+### RIGHT BOUND ###
+def f_subcrit(F, d0, d=0.01, bound=None):
+    """Compute the intersection of the right resonant boundary with
+    the subcritical bound. Use points along the bound to give as
+    guess to fsolve. When fsolve soln comes close to the guess,
+    return the current guess.
+
+    F((h, d11), u0) is a function for fsolve to use to evaluate
+    the rightward bound.
+
+    d0 is the interface depth
+
+    d is half the width of the window that the guess must fall within
+
+    bound is a tuple (U, H) where U and H are arrays of the velocity
+    and current depth along the subcritical boundary.
+    """
+    if not bound:
+        lower_branch, upper_branch = critical_bounds(d0)
+    elif bound:
+        lower_branch = bound
+    # sort by u
+    p = lower_branch[0].argsort()
+    bound_U = lower_branch[0][p]
+    bound_h = lower_branch[1][p]
+    for i, u in enumerate(bound_U):
+        h = bound_h[i]
+        # use d0 as guess for d11
+        _h, _d11 = fsolve(F, (h, d0), args=(u,))
+        if h - d < _h < h + d:
+            return h, _d11, u
+    return False
+
+
+def right_resonance(S_=0.75, d0_=0.3, lower_bound=None, res=100):
     """The method used by White and Helfrich to find the
     right bound of the resonant wedge is as follows.
 
@@ -240,12 +350,12 @@ def wh_right_resonance(S_=0.75, d0_=0.3):
         return f35(*p, U0=U0), f36(*p, U0=U0)
 
     # find the initial guess using the subcritical boundary
-    _h, _d11, _U0 = f_subcrit(E, d0=d0_, d=0.005)
+    _h, _d11, _U0 = f_subcrit(E, d0=d0_, d=0.005, bound=lower_bound)
     print("Starting branch at ({u}, {h})".format(u=_U0, h=_h))
     guess = _h, _d11
     p = guess
     branch = []
-    U = np.linspace(_U0, 0.5, 50)
+    U = np.linspace(_U0, 0.5, res)
     for u0 in U:
         p = fsolve(E, p, args=(u0))
         branch.append((p[0], p[1], u0))
@@ -259,8 +369,14 @@ def wh_right_resonance(S_=0.75, d0_=0.3):
     crit = eq39(U11=u11, U21=u21)
     fcrit = sp.lambdify((U0, d0, d11), crit, "numpy")
     fc = fcrit(U, d0_, D11)
-    # first zero crossing
-    zero = np.where(np.diff(np.sign(fc)))[0][0]
+    zeros = np.where(np.diff(np.sign(fc)))[0]
+    if len(zeros) == 0:
+        return branch
+    else:
+        # first zero crossing
+        zero = zeros[0]
+        # return the branch up to the first zero crossing of criterion
+        return branch[:zero]
 
     # evaluations
     # u11, u21, cb, d1c
@@ -269,41 +385,49 @@ def wh_right_resonance(S_=0.75, d0_=0.3):
     # fcb = sp.lamdify((U0, d0, d11), sp.solve(eq31(), Cb), "numpy")
     # fd1c = sp.lambdify((U0, d0, d11, S, h), d1c_, "numpy")
 
-    # return the branch up to the first zero crossing of criterion
-    return branch[:zero]
+### /RIGHT BOUND ###
 
 
-def f_subcrit(F, d0, d=0.01, bound=None):
-    """Compute the intersection of the right resonant boundary with
-    the subcritical bound. Use points along the bound to give as
-    guess to fsolve. When fsolve soln comes close to the guess,
-    return the current guess.
+### AMPLITUDES ###
+def d11_contours():
+    """The contours in d11 are computed by varying the
+    dissipation in eq 3.8.
 
-    F((h, d11), u0) is a function for fsolve to use to evaluate
-    the rightward bound.
+    Zero dissipation defines the right edge of the
+    resonant wedge. Inside the wedge the dissipation
+    varies.
 
-    d0 is the interface depth
-
-    d is half the width of the window that the guess must fall within
-
-    bound is a tuple (U, H) where U and H are arrays of the velocity
-    and current depth along the subcritical boundary.
+    The upper bound of the resonant wedge is given by
+    a d11 contour.
     """
-    if not bound:
-        lower_branch, upper_branch = critical_bounds(d0)
-    elif bound:
-        lower_branch = bound
-    # sort by u
-    p = lower_branch[0].argsort()
-    bound_U = lower_branch[0][p]
-    bound_h = lower_branch[1][p]
-    for i, u in enumerate(bound_U):
-        h = bound_h[i]
-        # use d0 as guess for d11
-        _h, _d11 = fsolve(F, (h, d0), args=(u,))
-        if h - d < _h < h + d:
-            return h, _d11, u
-    return False
+    pass
+
+### /AMPLITUDES ###
+
+
+### DO STUFF ###
+def make_regime_diagram(S_=0.75, d0_=0.3, res=100):
+    # H = np.linspace(0, d0, res)
+    lower_critical, upper_critical = critical_bounds(d0=d0_)
+    branch = right_resonance(S_=S_, d0_=d0_, lower_bound=lower_critical)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    # lower critical bound
+    ax.plot(lower_critical[1], lower_critical[0])
+    # upper critical bound
+    ax.plot(upper_critical[1], upper_critical[0])
+    # line at 0.5 originating from furthest right point of upper
+    # bound
+    h = np.linspace(upper_critical[1].max(), 1)
+    u = np.array([0.5 for i in h])
+    ax.plot(h, u)
+    # right resonant bound
+    ax.plot(branch[:, 0], branch[:, 2])
+    plt.show()
+    return upper_critical
+
+### /DO STUFF ###
 
 
 def brentq_scan(f, a, b, d=None, n=1):
@@ -328,87 +452,6 @@ def brentq_scan(f, a, b, d=None, n=1):
         except ValueError:
             pass
     return roots
-
-
-def fast_solve(H, d0_=0.1, combined_poly=None):
-    """Find the branches of solutions to two layer flow
-    over topography for a given interface depth d0 and
-    an array of topography heights H.
-
-    Returns a list of arrays of U corresponding to H,
-    with as many list elements as there are roots of the
-    equations (4).
-    """
-    if not combined_poly:
-        combined_poly = U_subbed_poly()
-    # we want to get the coefficients, but also to be able to
-    # evaluate over an input array. the latter requires that we
-    # use lambdify.
-    # we can do this!
-    coeff = lambdify((d0, h), sp.Poly(combined_poly, d1c).coeffs(), "numpy")
-    d0_ = np.array([d0_])
-    coeffs = np.array(coeff(*np.meshgrid(d0_, H)))
-    # now we have a list of arrays of coefficients, each array
-    # having the dimension of H
-    # np.roots can only take 1d input so we have to be explicit
-    Roots = np.array([np.roots(coeffs[:, i].squeeze()) for i in range(len(H))])
-    # Now we work out what U would be
-    Uf = lambdify((d0, h, d1c), U(h=h, d0=d0, d1c=d1c), "numpy")
-    U_sol = [Uf(d0_, H, Roots[:, i]) for i in range(Roots.shape[1])]
-    return U_sol
-
-
-def branch_select(U, H, d0):
-    """Given a load of values of U and corresponding H,
-    for a given d0, find the combinations of (U,H) that
-    define the upper / lower limits of the critical flow
-    region in two layer flow over topography.
-
-    Inputs: U is an array of velocities.
-            H is an array of heights that correspond to U.
-            d0 is the interface depth (scalar)
-
-    Returns a tuple (lower, upper) where lower and upper
-    are tuples of the arrays of U, H that satisfy the
-    criterion.
-
-    The criterion for branch selection is 0 < h < d0 for
-    both; 0 < U0 < c0 for the lower branch; c0 < U0 < 0.5
-    for the upper branch.
-
-    We use 0.5 as the upper limit as this is the speed of
-    the conjugate state in two layers.
-
-    c0 = ((1 - d0) * d0 ) ** .5 is the liner longwave speed
-    on the interface.
-    """
-    # longwave speed
-    c0 = longwave_c0(d0)
-
-    cond_all = np.logical_and(0 < H, H < d0)
-    cond_lower = np.logical_and(cond_all, np.logical_and(0 < U, U < c0))
-    cond_upper = np.logical_and(cond_all, np.logical_and(c0 < U, U < 0.5))
-
-    lower_branch = (U[cond_lower], H[cond_lower])
-    upper_branch = (U[cond_upper], H[cond_upper])
-
-    return lower_branch, upper_branch
-
-
-def critical_bounds(d0, H=None):
-    if not H:
-        # h can be greater than d0 (current deeper than the
-        # interface), but not for subcritical solutions. Deeper than
-        # d0 corresponds to solutions in the critical or
-        # supercritical regions.
-        H = np.linspace(0, d0, 50)
-    U_sol = fast_solve(H, d0)
-    # Put all the U into a single array with a corresponding H array
-    U = np.concatenate(U_sol)
-    # H to match the U
-    Hu = np.concatenate([H for Us in U_sol])
-    lower, upper = branch_select(U, Hu, d0)
-    return lower, upper
 
 
 def Uh(d0, U_sol, h_sol, D0):
