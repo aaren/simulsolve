@@ -249,7 +249,20 @@ def wh_right_resonance(S_=0.75, d0_=0.3):
     for u0 in U:
         p = fsolve(E, p, args=(u0))
         branch.append((p[0], p[1], u0))
-    return branch
+
+    branch = np.asarray(branch)
+    # H = branch[:, 0]
+    D11 = branch[:, 1]
+    U = branch[:, 2]
+
+    # evaluate critical criterion
+    crit = eq39(U11=u11, U21=u21)
+    fcrit = sp.lambdify((U0, d0, d11), crit, "numpy")
+    fc = fcrit(U, d0_, D11)
+    # first zero crossing
+    zero = np.where(np.diff(np.sign(fc)))[0][0]
+    # return the branch up to the first zero crossing of criterion
+    return branch[:zero]
 
 
 def f_subcrit(F, d0, d=0.01, bound=None):
