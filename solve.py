@@ -223,10 +223,10 @@ def wh_right_resonance(S_=0.75, d0_=0.3):
     u11, u21 = us()
     # solve eq38 for d1c (positive root)
     # with dissipation equal to zero
-    # and sub out u11 to give d1c = f(S, h, d11)
+    # and sub out u11 to give d1c = f(U0, d0, S, h, d11)
     d1c_ = sp.solve(eq38(Dc=0), d1c)[1].subs({U11: u11})
     # now sub out S, d0, d1c, u11, u21 from eqs 3.5 and 3.6
-    # have to do S and d0 in additional step to get them all
+    # have to do S and d0 in additional step to get them all out
     subs = {d1c: d1c_, U11: u11, U21: u21}
     s35 = eq35().subs(subs).subs({S: S_, d0: d0_})
     s36 = eq36().subs(subs).subs({S: S_, d0: d0_})
@@ -261,6 +261,14 @@ def wh_right_resonance(S_=0.75, d0_=0.3):
     fc = fcrit(U, d0_, D11)
     # first zero crossing
     zero = np.where(np.diff(np.sign(fc)))[0][0]
+
+    # evaluations
+    # u11, u21, cb, d1c
+    # fu11 = sp.lambdify((U0, d0, d11), u11, "numpy")
+    # fu21 = sp.lambdify((U0, d0, d11), u21, "numpy")
+    # fcb = sp.lamdify((U0, d0, d11), sp.solve(eq31(), Cb), "numpy")
+    # fd1c = sp.lambdify((U0, d0, d11, S, h), d1c_, "numpy")
+
     # return the branch up to the first zero crossing of criterion
     return branch[:zero]
 
