@@ -171,6 +171,15 @@ def resonant_criterion():
 ### /REARRANGEMENTS ###
 
 
+### EXTRA CRITICAL SOLUTIONS ###
+# solving equations 2.7 and 2.8 to get the subcritical and
+# supercritical solution branches. NB. two branches for
+# supercritical for S<Sc and it isn't always 'supercritical'
+
+
+### /EXTRA CRITICAL SOLUTIONS ###
+
+
 ### CRITICAL BOUNDS ###
 def fast_solve(H, d0_=0.1, combined_poly=None):
     """Find the branches of solutions to two layer flow
