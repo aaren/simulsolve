@@ -21,6 +21,23 @@ Cb, U11, U21, d11, S = sp.symbols('Cb, U11, U21, d11, S')
 
 
 ### BASE EQUATIONS ###
+def eq27(h=h, U0=U0, d0=d0, d1c=d1c):
+    """From the Bernoulli equation in two layer extra critical flow."""
+    Lh = d0 - d1c - h
+    Rh = (U0 ** 2 / 2) * ((d0 ** 2 / d1c ** 2)
+                          - ((1 - d0) ** 2 / (1 - d1c - h) ** 2))
+    f = Lh - Rh
+    return f
+
+
+def eq28(h=h, U0=U0, d0=d0, d1c=d1c, S=S):
+    """Momentum conservation in two layer extra critical flow."""
+    f = (h ** 2 / (2 * S)) - (h / S) + (d1c ** 2 / 2) - (d0 ** 2 / 2) \
+        + d0 - d1c + (d1c * h) \
+        + U0 ** 2 * (-.5 + (d0 ** 2 / d1c) + ((1 - d0) ** 2 / (1 - d1c - h)))
+    return f
+
+
 def eq29(h=h, S=S, U0=U0, d0=d0, d1c=d1c):
     f = h * (1 - S) / S - (U0 ** 2 / 2) * (d0 ** 2 / d1c ** 2)
     return f
