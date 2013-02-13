@@ -156,7 +156,8 @@ def us():
     # I think this is the correct root for Cb [1]
     # actually, taking the first one seems to get the right
     # answers...
-    cb = sp.solve(eq31(), Cb)[0]
+    # maybe it makes no difference.
+    cb = sp.solve(eq31(), Cb)[1]
     u11 = sp.solve(eq33().subs(Cb, cb), U11)[0]
     u21 = sp.solve(eq34().subs(Cb, cb), U21)[0]
     return u11, u21
