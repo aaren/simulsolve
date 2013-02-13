@@ -236,7 +236,11 @@ def branch_select(U, H, d0):
     # longwave speed
     c0 = longwave_c0(d0)
 
-    cond_all = np.logical_and(0 < H, H < d0)
+    # are values in region that we care about?
+    cond_physical = np.logical_and(0 < H, H < d0)
+    # is velocity real?
+    cond_all = np.logical_and(cond_physical, np.isreal(U))
+    # determine whether lower or upper branch?
     cond_lower = np.logical_and(cond_all, np.logical_and(0 < U, U < c0))
     cond_upper = np.logical_and(cond_all, np.logical_and(c0 < U, U < 0.5))
 
