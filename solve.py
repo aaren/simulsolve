@@ -466,26 +466,44 @@ def simple_d11_contour(S_=0.75, d0_=0.3, d11_=0.4):
 
 ### DO STUFF ###
 def make_regime_diagram(S_=0.75, d0_=0.3, res=100):
-    # H = np.linspace(0, d0, res)
-    lower_critical, upper_critical = critical_bounds(d0=d0_)
-    branch = right_resonance(S_=S_, d0_=d0_, lower_bound=lower_critical)
+    H = np.linspace(0, d0_, res)
+    lower_crit, upper_crit = critical_bounds(d0=d0_, H=H)
+    branch = right_resonance(S_=S_, d0_=d0_, lower_bound=lower_crit, res=res)
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
     # lower critical bound
-    ax.plot(lower_critical[1], lower_critical[0])
+    ax.plot(lower_crit[1], lower_crit[0])
     # upper critical bound
-    ax.plot(upper_critical[1], upper_critical[0])
+    ax.plot(upper_crit[1], upper_crit[0])
     # line at 0.5 originating from furthest right point of upper
     # bound
-    h = np.linspace(upper_critical[1].max(), 1)
+    h = np.linspace(upper_crit[1].max(), 1)
     u = np.array([0.5 for i in h])
     ax.plot(h, u)
     # right resonant bound
     ax.plot(branch[:, 0], branch[:, 2])
     plt.show()
-    return upper_critical
+    return upper_crit
 
+
+def map_maximum_amplitude(ns=2, nd=2, res=1000):
+    """Calculate the maximum amplitude d11 at the upper limit of
+    the right resonant bound over a range of d0 and S.
+    """
+    # TODO: speed up by not calculating things repeatedly
+    darr = np.linspace(0.1, 0.9, nd)
+    sarr = np.linspace(0.1, 0.9, ns)
+    amps = np.zeros((nd, ns))
+    for i, d0_ in enumerate(darr):
+        H = np.linspace(0, d0_, res)
+        lower, upper = critical_bounds(d0_, H=H)
+        for j, S_ in enumerate(sarr):
+            print("branch = right_resonance(S_={S_}, d0_={d0_}, lower_bound=lower)".format(S_=S_, d0_=d0_))
+            branch = right_resonance(S_=S_, d0_=d0_, lower_bound=lower, res=res)
+            print "max d11", branch[0][1]
+            amps[i, j] = branch[0][1]
+    return amps
 ### /DO STUFF ###
 
 
