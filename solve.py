@@ -433,6 +433,34 @@ def d11_contours():
     """
     pass
 
+
+def simple_d11_contour(S_=0.75, d0_=0.3, d11_=0.4):
+    """Use eq39 as part of the equation set.
+
+    Drop eq38 as no longer have constant dissipation.
+
+    This means we can't eliminate d1c anymore, but this
+    is ok as we are specifying d11.
+
+    Given: d0, S, d11
+
+    Vary: U0, h
+
+    Free: d1c, u11, u21, Cb
+    """
+    # upper limit as (U0, d0, d11)
+    # uses 1 equation
+    fcrit = resonant_criterion()
+    # as f(U0)
+    fcrit_u = fcrit.subs({d0: d0_, d11: d11_})
+    # u11, u21 as f(U0, d0, d11)
+    # uses 3 equations
+    u11, u21 = us()
+    subu = {U11: u11, U21: u21}
+    # last 2 equations as f(U0, d11, d1c, d0, h)
+    s35 = eq35().subs(subu).subs({S: S_, d0: d0_})
+    s36 = eq36().subs(subu).subs({S: S_, d0: d0_})
+    # now we
 ### /AMPLITUDES ###
 
 
