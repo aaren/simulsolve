@@ -1,7 +1,8 @@
+# have to import sympy first, or segfault!
+import sympy as sp
 import numpy as np
 # import matplotlib as mpl
 # mpl.use('Agg')
-import sympy as sp
 import matplotlib.pyplot as plt
 from scipy.optimize import brentq, fsolve
 from sympy.utilities.lambdify import lambdify
