@@ -176,7 +176,17 @@ def resonant_criterion():
 # solving equations 2.7 and 2.8 to get the subcritical and
 # supercritical solution branches. NB. two branches for
 # supercritical for S<Sc and it isn't always 'supercritical'
-
+def extra_critical_solution(h_, S_=0.75, d0_=0.3):
+    # solve eq. 2.7 for U_0 ** 2
+    u_squared = sp.solve(eq27(d0=d0_), U0 ** 2)[0]
+    # substitute this into eq. 2.8 for given value of h and
+    # simplify to create a polynomial in d1c
+    d1cp = eq28(d0=d0_, S=S_).subs(U0 ** 2, u_squared).subs(h, h_)
+    d1cp = d1cp.simplify().fraction()[0]
+    # get the real roots of this polynomial
+    d1c_roots = sp.roots(d1cp, filter='R').keys()
+    # only d1c in [0, 1] is physical
+    d1c_roots = [d for d in d1c_roots if (0 <= d <= 1)]
 
 ### /EXTRA CRITICAL SOLUTIONS ###
 
