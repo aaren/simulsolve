@@ -176,17 +176,70 @@ def resonant_criterion():
 # solving equations 2.7 and 2.8 to get the subcritical and
 # supercritical solution branches. NB. two branches for
 # supercritical for S<Sc and it isn't always 'supercritical'
-def extra_critical_solution(h_, S_=0.75, d0_=0.3):
-    # solve eq. 2.7 for U_0 ** 2
-    u_squared = sp.solve(eq27(d0=d0_), U0 ** 2)[0]
-    # substitute this into eq. 2.8 for given value of h and
-    # simplify to create a polynomial in d1c
-    d1cp = eq28(d0=d0_, S=S_).subs(U0 ** 2, u_squared).subs(h, h_)
-    d1cp = d1cp.simplify().fraction()[0]
-    # get the real roots of this polynomial
-    d1c_roots = sp.roots(d1cp, filter='R').keys()
-    # only d1c in [0, 1] is physical
-    d1c_roots = [d for d in d1c_roots if (0 <= d <= 1)]
+def u_squared(d1c_=d1c, d0_=d0, h_=h):
+    """solve eq. 2.7 for U_0 ** 2"""
+    return sp.solve(eq27(), U0 ** 2)[0].subs({d1c: d1c_, h: h_, d0: d0_})
+
+
+class ExtraCritical(object):
+    def __init__(self, S=0.75, d0=0.3, H=np.linspace(0.001, 0.49, 100)):
+        self.S = 0.75
+        self.d0 = 0.3
+        self.H = H
+
+        self.u_squared = u_squared(d0_=d0)
+
+    def d1c_roots(self, h_):
+        # substitute U_0**2 into eq. 2.8 for given value of h and
+        # simplify to create a polynomial in d1c
+        d1cp = eq28().subs(U0 ** 2, u_squared())
+        d1cp = d1cp.subs({h: h_, S: self.S, d0: self.d0})
+        d1cp = sp.fraction(d1cp.simplify())[0]
+        # get the real roots of this polynomial
+        d1c_roots = sp.roots(d1cp, filter=None, multiple=True)
+        # only d1c in [0, 1 - h] is physical
+        # d1c_roots = [d for d in d1c_roots if (0 <= d < 1 - h_)]
+        # convert to float
+        return np.array(d1c_roots, dtype=complex)
+
+    @property
+    def fU0(self):
+        """Function that can take numpy arrays to calculate
+        U0 as a function of (h, d1c)."""
+        u = self.u_squared ** .5
+        return sp.lambdify((h, d1c), u, "numpy")
+
+    def all_d1c_roots(self):
+        return np.vstack(self.d1c_roots(h_=h) for h in self.H)
+
+    def solutions(self):
+        """Return a tuple of arrays (H, U0, D1c) that contain
+        solutions. Includes non physical solutions."""
+        H = np.expand_dims(self.H, 1)
+        D1c = self.all_d1c_roots()
+        U0 = self.fU0(H, D1c)
+        return H, U0, D1c
+
+    def filter_solutions(self):
+        """Filter the solutions to create two branches.
+
+        Remove complex roots.
+
+        Remove non physical roots (need 0 < d1c < 1 - h)
+        """
+        h, u, d = self.solutions()
+        valid = ~np.iscomplex(d) & (d > 0) & (d < (1 - h))
+        vh = h[np.where(valid)]
+        vu = u[np.where(valid)]
+        vd = d[np.where(valid)]
+
+
+# scan through h
+# Careful! there is a degeneracy at h=0.5
+# for each h we get two values of d1c.
+# then work out two values of U0
+
+# then we construct two solution branches in (h, U0, d1c)
 
 ### /EXTRA CRITICAL SOLUTIONS ###
 
