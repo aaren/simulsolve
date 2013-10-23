@@ -62,8 +62,11 @@ def eq212(h=h, U0=U0, d1c=d1c, d0=d0):
 
 def eq31(U0=U0, Cb=Cb, d11=d11, d0=d0):
     """Klemp et al bore jump condition"""
-    f = (U0 + Cb) ** 2 - ((d11 ** 2 * (1 - d11) * (2 - d11 - d0)) / (d11 + d0 + d11 ** 2 - 3 * d0 * d11))
-    return f
+    LHS = (U0 + Cb)
+    RHSnumer = (d11 ** 2 * (1 - d11) * (2 - d11 - d0))
+    RHSdenom = (d11 + d0 + d11 ** 2 - 3 * d0 * d11)
+    RHS = (RHSnumer / RHSdenom) ** .5
+    return LHS - RHS
 
 
 def eq33(U11=U11, Cb=Cb, d11=d11, U0=U0, d0=d0):
@@ -158,7 +161,7 @@ def us():
     # actually, taking the first one seems to get the right
     # answers...
     # maybe it makes no difference.
-    cb = sp.solve(eq31(), Cb)[1]
+    cb = sp.solve(eq31(), Cb)[0]
     u11 = sp.solve(eq33().subs(Cb, cb), U11)[0]
     u21 = sp.solve(eq34().subs(Cb, cb), U21)[0]
     return u11, u21
@@ -181,7 +184,7 @@ def u_squared(d1c_=d1c, d0_=d0, h_=h):
     return sp.solve(eq27(), U0 ** 2)[0].subs({d1c: d1c_, h: h_, d0: d0_})
 
 
-class ExtraCritical(object):
+class ExtraCriticalSolver(object):
     def __init__(self, S=0.75, d0=0.3, H=np.linspace(0.001, 0.49, 100)):
         self.S = 0.75
         self.d0 = 0.3
@@ -216,12 +219,15 @@ class ExtraCritical(object):
         """Return a tuple of arrays (H, U0, D1c) that contain
         solutions. Includes non physical solutions."""
         H = np.expand_dims(self.H, 1)
+        # expand H to number of solutions
+        # TODO: more robust?
+        H = np.tile(H, 6)
         D1c = self.all_d1c_roots()
         U0 = self.fU0(H, D1c)
         return H, U0, D1c
 
-    def filter_solutions(self):
-        """Filter the solutions to create two branches.
+    def filtered_solutions(self):
+        """Filter the solutions.
 
         Remove complex roots.
 
@@ -232,6 +238,15 @@ class ExtraCritical(object):
         vh = h[np.where(valid)]
         vu = u[np.where(valid)]
         vd = d[np.where(valid)]
+        return vh, vu, vd
+
+    def supercriticalbranch(self):
+        """Extract the supercritical branch from solutions."""
+        h, u, d = self.filtered_solutions()
+        # FIXME: make this more general - not sure works universally
+        valid = np.where(u > 0.4)
+        return h[valid], u[valid], d[valid]
+
 
 
 # scan through h
@@ -240,6 +255,43 @@ class ExtraCritical(object):
 # then work out two values of U0
 
 # then we construct two solution branches in (h, U0, d1c)
+
+# we want to find what the conjugate state solutions are along the
+# supercritical solution curve.
+
+from conjugate import Example_nsolve
+
+class ConjugateStateSolver(object):
+    def __init__(self, S, d0):
+        self.S = S
+        self.d0 = d0
+
+        solver = ExtraCriticalSolver(S=S, d0=d0)
+        print("Extracting the supercritical curve..")
+        self.supercurve = solver.supercriticalbranch()
+
+    def solver(h, U0, d1c):
+        S = self.S
+        d0 = self.d0
+        # convert from White and Helfrich notation to Lamb notation
+        h1 = h
+        h2 = d1c
+        h3 = 1 - d1c - h
+        u1 = 0
+        u2 = U0 * (1 - d0) / (1 - d1c - h)
+        u3 = U0 * d0 / d1c
+        s = S / (1 - S)
+
+        solver = Example_nsolve(s=s, u1=u1, u2=u2, u3=u3, h1=h1, h2=h2, h3=h3)
+
+        return solver
+
+
+
+
+
+
+
 
 ### /EXTRA CRITICAL SOLUTIONS ###
 
@@ -632,4 +684,4 @@ def main(d0_=0.3):
 
 
 if __name__ == '__main__':
-    main()
+    make_regime_diagram()
