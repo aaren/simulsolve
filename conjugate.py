@@ -1,7 +1,6 @@
 import sympy as sp
 import numpy as np
-
-from scipy.optimize import fsolve
+import matplotlib.pyplot as plt
 
 # wave amplitudes, speed
 a, b, c = sp.symbols('a, b, c')
@@ -18,31 +17,6 @@ v1, v2, v3 = sp.symbols('v1, v2, v3')
 # unperturbed layer depths
 h1, h2, h3 = sp.symbols('h1, h2, h3')
 
-
-def find_intersections(A, B):
-    # min, max and all for arrays
-    amin = lambda x1, x2: np.where(x1<x2, x1, x2)
-    amax = lambda x1, x2: np.where(x1>x2, x1, x2)
-    aall = lambda abools: np.dstack(abools).all(axis=2)
-    slope = lambda line: (lambda d: d[:,1]/d[:,0])(np.diff(line, axis=0))
-
-    x11, x21 = np.meshgrid(A[:-1, 0], B[:-1, 0])
-    x12, x22 = np.meshgrid(A[1:, 0], B[1:, 0])
-    y11, y21 = np.meshgrid(A[:-1, 1], B[:-1, 1])
-    y12, y22 = np.meshgrid(A[1:, 1], B[1:, 1])
-
-    m1, m2 = np.meshgrid(slope(A), slope(B))
-    m1inv, m2inv = 1/m1, 1/m2
-
-    yi = (m1*(x21-x11-m2inv*y21) + y11)/(1 - m1*m2inv)
-    xi = (yi - y21)*m2inv + x21
-
-    xconds = (amin(x11, x12) < xi, xi <= amax(x11, x12),
-              amin(x21, x22) < xi, xi <= amax(x21, x22) )
-    yconds = (amin(y11, y12) < yi, yi <= amax(y11, y12),
-              amin(y21, y22) < yi, yi <= amax(y21, y22) )
-
-    return xi[aall(xconds)], yi[aall(yconds)]
 
 def F(a=a, b=b, v1=v1, v2=v2, v3=v3, h1=h1, h2=h2, h3=h3, s=s):
     A = (h1 + a) ** 2
@@ -77,50 +51,112 @@ class FGSolver(object):
         self.f = sp.lambdify((a, b), self.F)
         self.g = sp.lambdify((a, b), self.G)
 
-    def rough_zero(self, start=0.0001, end=1, res=1000):
-        """roughly calculate zero contours of F.
+        self.H = h1, h2, h3
+        self.V = v1, v2, v3
 
-        Just does mode-1 for now (a and b same sign).
-
-        Returns two arrays of shape (2, res), corresponding to the
-        zero contour in the upper right and lower left quadrants.
+    def insolutiontriangle(self, ab):
+        """Boolean, is ab = (a, b) inside the physical solution
+        triangle?
         """
-        # upper right quadrant
+        h1, h2, h3 = self.H
 
-        B = np.linspace(start, end, res)
-        a1 = [start]
-        for b in B:
-            # use last value of a as guess
-            a = fsolve(self.f, a1[-1], args=(b,))
-            a1.append(a)
-        a1 = np.hstack(a1[1:])
+        a, b = ab
 
-        s1 = np.vstack((a1, B))
+        c1 = (a > -h1) & (a < (1 - h1))
+        c2 = (b > (a - h2)) & (b < (a + 1 - h2))
+        c3 = (b > -(h1 + h2)) & (b < h3)
 
-        B = -np.linspace(start, end, res)
-        a2 = [-start]
-        for b in B:
-            # use last value of a as guess
-            a = fsolve(self.f, a2[-1], args=(b,))
-            a2.append(a)
-        a2 = np.hstack(a2[1:])
+        return c1 & c2 & c3
 
-        s2 = np.vstack((a2, B))
+    def rough_zero_ordered(self):
 
-        return s1, s2
+        a, b = self.global_rough_zero(self.f)
+        f0 = np.column_stack((a, b))
+
+        segments = {}
+        # select upper right quadrant
+        segments['upper_right'] = f0[np.where((a > 0) & (b > 0))]
+        # select upper left quadrant
+        segments['upper_left'] = f0[np.where((a < 0) & (b > 0))]
+        # select lower left quadrant
+        segments['lower_left'] = f0[np.where((a < 0) & (b < 0))]
+        # select lower right quadrant
+        segments['lower_right'] = f0[np.where((a > 0) & (b < 0))]
+
+        # for the origin segments, sort by proximity to origin
+        def sort_origin(points):
+            distance_from_origin = np.sum(points ** 2, axis=1)
+            return points[np.argsort(distance_from_origin)]
+
+        for quad in segments:
+            segments[quad] = sort_origin(segments[quad])
+
+        # for the upper left corner segment, take lower left
+        # and remove points outside the corner (-h1, h3), then
+        # sort by proximity to the corner
+        ul = segments['upper_left']
+        # use or here because we want to keep the rest of
+        # the curve so that we can terminate when it goes
+        # back outside the solution triangle.
+        h1, h2, h3 = self.H
+        # move the corner in a bit to ignore the return branch
+        # bit hacky but it works. There must be some extreme
+        # parameters that can be out here.
+        h1 -= 0.01
+        h3 -= 0.01
+        ulc = ul[np.where((ul[:, 0] > -h1) | (ul[:, 1] < h3))]
+        distance_from_corner = np.hypot(ulc[:, 0] + h1, ulc[:, 1] - h3)
+        ulc = ulc[np.argsort(distance_from_corner)]
+        segments['upper_left_corner'] = ulc
+
+        def kdt_sort(points):
+            # create a kd-tree
+            from scipy.spatial import KDTree
+            kdt = KDTree(points.copy())
+
+            # walk the tree (the list of points), finding the three
+            # nearest points. The nearest is the point itself, so select
+            # the next nearest as long as it isn't the last point found
+
+            # starting point, at some known extreme
+            indices = [0]
+            while True:
+                point = kdt.data[indices[-1]]
+                distances, (i0, i1) = kdt.query(point, 2)
+                # break if exhausted the points or next point
+                # would be outside the solution triangle
+                if i1 == kdt.data.shape[0]:
+                    break
+                next_point = kdt.data[i1]
+                if not self.insolutiontriangle(next_point):
+                    break
+                # eliminate this index from consideration
+                kdt.data[i0] *= np.nan
+                indices.append(i1)
+            return points[indices]
+
+        ordered_segments = {}
+
+        for segment in segments:
+            points = segments[segment]
+            ordered_points = kdt_sort(points)
+            ordered_segments[segment] = ordered_points
+
+        return ordered_segments
 
     def global_rough_zero(self, f):
         x = np.linspace(-1, 1, 1000)
         y = np.linspace(-1, 1, 1000)
         A, B = np.meshgrid(x, y)
         fab = f(A, B)
-
-        # find rough zeros in F over the domain
-        zeros = np.where(np.diff(np.sign(fab)) != 0)
-        a, b = A[zeros], B[zeros]
-
-        # TODO:just have to find a way of determing where G changes sign
-        # on these points
+        # intersection between contour sets is done here:
+        # http://stackoverflow.com/questions/17416268/
+        # but we'll just use the bit for getting points
+        # from matplotlib contour
+        contour = plt.contour(A, B, fab, levels=[0])
+        points = np.row_stack(p.vertices for line in contour.collections
+                              for p in line.get_paths())
+        a, b = points.T
         return a, b
 
     def zeroG(self, f0):
@@ -129,15 +165,15 @@ class FGSolver(object):
         We are looking G=0, i.e. a sign change.
 
         Inputs:
-            f0 - an array of (a, b), shape (2, N)
+            f0 - an array of (a, b), shape (N, 2)
 
         Return (a, b) in the vicinity of the sign change.
         """
-        g = self.g(*f0)
+        g = self.g(*f0.T)
         # find zero crossing
         # TODO: more elegant? like interpolating?
         zero = np.where(np.diff(np.sign(g)) != 0)
-        ab = np.vstack((f0[0, zero], f0[1, zero])).squeeze()
+        ab = np.vstack((f0[zero], f0[zero])).squeeze()
         return ab
 
     def enhance(self, guess, **kwargs):
@@ -149,20 +185,24 @@ class FGSolver(object):
         guess = tuple(guess)
         variables = (a, b)
         equation_set = (self.F, self.G)
-        ab = sp.nsolve(equation_set, variables, guess, **kwargs)
+        try:
+            ab = sp.nsolve(equation_set, variables, guess, **kwargs)
+        except:
+            return guess
         return np.array(ab, dtype=float)
 
     @property
     def roots(self):
         """Calculate the roots of the system."""
-        s1, s2 = self.rough_zero()
-        guess1 = self.zeroG(s1)
-        guess2 = self.zeroG(s2)
+        segments = self.rough_zero_ordered()
 
-        ab1 = self.enhance(guess1)
-        ab2 = self.enhance(guess2)
+        roughzeros = [self.zeroG(segments[s]) for s in segments]
+        # remove duplicates and concatenate
+        guesses = np.row_stack(np.unique(g).reshape((-1, 2))
+                               for g in roughzeros if g.size != 0)
+        enhanced_guesses = [self.enhance(guess) for guess in guesses]
 
-        return ab1, ab2
+        return enhanced_guesses
 
 
 # evaluate c+- over a, b
