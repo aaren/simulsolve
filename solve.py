@@ -35,7 +35,7 @@ def eq28(h=h, U0=U0, d0=d0, d1c=d1c, S=S):
     """Momentum conservation in two layer extra critical flow."""
     f = (h ** 2 / (2 * S)) - (h / S) + (d1c ** 2 / 2) - (d0 ** 2 / 2) \
         + d0 - d1c + (d1c * h) \
-        + U0 ** 2 * (-.5 + (d0 ** 2 / d1c) + ((1 - d0) ** 2 / (1 - d1c - h)))
+        + U0 ** 2 * (-.5 + (d0 ** 2 / d1c) + (1 - d0) ** 2 / (1 - d1c - h))
     return f
 
 
@@ -186,10 +186,9 @@ def u_squared(d1c_=d1c, d0_=d0, h_=h):
 
 class ExtraCriticalSolver(object):
     def __init__(self, S=0.75, d0=0.3, H=np.linspace(0.001, 0.49, 100)):
-        self.S = 0.75
-        self.d0 = 0.3
+        self.S = S
+        self.d0 = d0
         self.H = H
-
         self.u_squared = u_squared(d0_=d0)
 
     def d1c_roots(self, h_):
@@ -198,11 +197,8 @@ class ExtraCriticalSolver(object):
         d1cp = eq28().subs(U0 ** 2, u_squared())
         d1cp = d1cp.subs({h: h_, S: self.S, d0: self.d0})
         d1cp = sp.fraction(d1cp.simplify())[0]
-        # get the real roots of this polynomial
+        # get all roots of this polynomial
         d1c_roots = sp.roots(d1cp, filter=None, multiple=True)
-        # only d1c in [0, 1 - h] is physical
-        # d1c_roots = [d for d in d1c_roots if (0 <= d < 1 - h_)]
-        # convert to float
         return np.array(d1c_roots, dtype=complex)
 
     @property
@@ -213,19 +209,24 @@ class ExtraCriticalSolver(object):
         return sp.lambdify((h, d1c), u, "numpy")
 
     def all_d1c_roots(self):
-        return np.vstack(self.d1c_roots(h_=h) for h in self.H)
+        """Find all the roots of the polynomial in d1c over all h.
 
+        Returns two arrays, all the H and all the corresponding d1c.
+        """
+        return np.vstack(np.hstack(np.meshgrid(h, self.d1c_roots(h)))
+                         for h in self.H).T
+
+    @property
     def solutions(self):
         """Return a tuple of arrays (H, U0, D1c) that contain
         solutions. Includes non physical solutions."""
-        H = np.expand_dims(self.H, 1)
-        # expand H to number of solutions
-        # TODO: more robust?
-        H = np.tile(H, 6)
-        D1c = self.all_d1c_roots()
-        U0 = self.fU0(H, D1c)
-        return H, U0, D1c
+        if not hasattr(self, '_solutions'):
+            H, D1c = self.all_d1c_roots()
+            U0 = self.fU0(H, D1c)
+            setattr(self, '_solutions', (H, U0, D1c))
+        return self._solutions
 
+    @property
     def filtered_solutions(self):
         """Filter the solutions.
 
@@ -233,21 +234,37 @@ class ExtraCriticalSolver(object):
 
         Remove non physical roots (need 0 < d1c < 1 - h)
         """
-        h, u, d = self.solutions()
-        valid = ~np.iscomplex(d) & (d > 0) & (d < (1 - h))
-        vh = h[np.where(valid)]
-        vu = u[np.where(valid)]
-        vd = d[np.where(valid)]
+        h, u, d = self.solutions
+        # zero tolerance
+        r = 0.001
+        valid = ~np.iscomplex(d) & (d > r) & (d < (1 - h - r))
+        vh = h[np.where(valid)].astype(np.float)
+        vu = u[np.where(valid)].astype(np.float)
+        vd = d[np.where(valid)].astype(np.float)
         return vh, vu, vd
 
-    def supercriticalbranch(self):
-        """Extract the supercritical branch from solutions."""
-        h, u, d = self.filtered_solutions()
-        # FIXME: make this more general - not sure works universally
-        valid = np.where(u > 0.4)
+    def select_branch(self, branch):
+        """Extract given branch ('super' or 'sub') from
+        solutions."""
+        h, u, d = self.filtered_solutions
+        # not sure why this criterion is the case, but it matches
+        # the results across (d0, S)
+        crit = d / self.d0 + h
+        if branch == 'super':
+            valid = np.where(crit > 1)
+        elif branch == 'sub':
+            valid = np.where(crit < 1)
         return h[valid], u[valid], d[valid]
 
+    @property
+    def supercritical_branch(self):
+        """Return the supercritical branch, in (h, u0, d1c)."""
+        return self.select_branch('super')
 
+    @property
+    def subcritical_branch(self):
+        """Return the subcritical branch, in (h, u0, d1c)."""
+        return self.select_branch('sub')
 
 # scan through h
 # Careful! there is a degeneracy at h=0.5
@@ -258,31 +275,32 @@ class ExtraCriticalSolver(object):
 
 # we want to find what the conjugate state solutions are along the
 # supercritical solution curve.
+from conjugate import GivenUSolver
 
-from conjugate import Example_nsolve
 
 class ConjugateStateSolver(object):
     def __init__(self, S, d0):
         self.S = S
         self.d0 = d0
 
-        solver = ExtraCriticalSolver(S=S, d0=d0)
+        self.ec_solver = ExtraCriticalSolver(S=S, d0=d0)
         print("Extracting the supercritical curve..")
-        self.supercurve = solver.supercriticalbranch()
+        self.supercurve = self.ec_solver.supercritical_branch
 
-    def solver(h, U0, d1c):
+    def solver(self, (h, U0, d1c)):
         S = self.S
         d0 = self.d0
         # convert from White and Helfrich notation to Lamb notation
+        # in the LAB frame
         h1 = h
         h2 = d1c
         h3 = 1 - d1c - h
-        u1 = 0
-        u2 = U0 * (1 - d0) / (1 - d1c - h)
-        u3 = U0 * d0 / d1c
+        u1 = U0
+        u2 = U0 - U0 * (1 - d0) / (1 - d1c - h)
+        u3 = U0 - U0 * d0 / d1c
         s = S / (1 - S)
 
-        solver = Example_nsolve(s=s, u1=u1, u2=u2, u3=u3, h1=h1, h2=h2, h3=h3)
+        solver = GivenUSolver(s=s, u1=u1, u2=u2, u3=u3, h1=h1, h2=h2, h3=h3)
 
         return solver
 
