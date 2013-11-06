@@ -61,13 +61,11 @@ class FGSolver(object):
 
         return fu1 + fu2 - fu3
 
-    def insolutiontriangle(self, ab):
+    def insolutiontriangle(self, (a, b)):
         """Boolean, is ab = (a, b) inside the physical solution
         triangle?
         """
         h1, h2, h3 = self.H
-
-        a, b = ab
 
         c1 = (a > -h1) & (a < (1 - h1))
         c2 = (b > (a - h2)) & (b < (a + 1 - h2))
@@ -182,10 +180,10 @@ class FGSolver(object):
         Inputs:
             f0 - an array of (a, b), shape (N, 2)
 
-        Return (a, b) in the vicinity of the sign change.
+        Return (a, b) in the vicinity of the sign changes.
         """
         g = self.g(*f0.T)
-        # find zero crossing
+        # find zero crossings
         # TODO: more elegant? like interpolating?
         zero = np.where(np.diff(np.sign(g)) != 0)
         ab = np.vstack((f0[zero], f0[zero])).squeeze()
@@ -200,19 +198,30 @@ class FGSolver(object):
         guess = guess.tolist()
         variables = (a, b)
         equation_set = (self.F, self.G)
-        ab = sp.nsolve(equation_set, variables, guess, **kwargs)
+        try:
+            ab = sp.nsolve(equation_set, variables, guess, **kwargs)
+        except ValueError:
+            ab = []
         return np.array(ab, dtype=float)
 
     @property
     def roots(self):
-        """Calculate the roots of the system."""
-        segments = self.rough_zero_ordered()
-        # find where G becomes zero on each branch in each quadrant
-        roughroots = {q: self.zeroG(branch) for q, branch in segments.items()}
+        """Calculate the roots of the system.
 
-        # remove duplicates and empty roots
-        # http://stackoverflow.com/questions/8560440
+        Returns an array of roots in (a, b, c):
+
+            [(a0, b0, c0),
+             (a1, b1, c1),
+             ...]
+
+        """
+        if hasattr(self, '_roots'):
+            return self._roots
+
         def unique(a):
+            """Remove duplicates from a 2d array
+            http://stackoverflow.com/questions/8560440
+            """
             order = np.lexsort(a.T)
             a = a[order]
             diff = np.diff(a, axis=0)
@@ -220,25 +229,27 @@ class FGSolver(object):
             ui[1:] = (diff != 0).any(axis=1)
             return a[ui]
 
-        rough_guesses = {quad: unique(root) if root.size != 0 else None
-                         for quad, root in roughroots.items()}
-
-        # converge on each root with non-linear solver
-        enhanced_guesses = {q: [self.enhance(g) for g in guesses]
-                            if guesses is not None else None
-                            for q, guesses in rough_guesses.items()}
-
+        # compute the rough zero contours of F
+        zero_contours = self.rough_zero_ordered().values()
+        # find where G becomes zero on each branch in each quadrant
+        roughroots = np.row_stack(self.zeroG(branch)
+                                  for branch in zero_contours)
+        # remove duplicates
+        guesses = unique(roughroots)
+        # find exact solutions near each of the guesses
+        enhanced_roots = [self.enhance(guess) for guess in guesses]
+        # reject roots that didn't converge
+        enhanced_roots = np.row_stack(r for r in enhanced_roots if len(r) > 0)
         # remove trivial zero solutions
         res = 2. / self.resolution
-        nonzero_enhanced_guesses = {}
-        for quadrant, guesses in enhanced_guesses.items():
-            if guesses is None:
-                nonzero_enhanced_guesses[quadrant] = None
-            else:
-                nonzero_enhanced_guesses[quadrant] = [g for g in guesses
-                                                      if np.hypot(*g) > res]
+        nonzero_enhanced_roots = np.row_stack(g for g in enhanced_roots
+                                                if np.hypot(*g) > res)
+        # compute c for each of the roots
+        C = self.compute_c(nonzero_enhanced_roots.T)
+        abc_roots = np.column_stack((nonzero_enhanced_roots, C))
 
-        return nonzero_enhanced_guesses
+        setattr(self, '_roots', abc_roots)
+        return abc_roots
 
     def compute_c(self, (a, b)):
         """Given values of (a, b), calculate
@@ -261,12 +272,17 @@ class FGSolver(object):
 
         return c2 ** .5
 
-    def compute_U(self, (a, b), c):
+    def compute_U(self, (a, b, c)):
         """For given a, b, c calculate the velocities ui."""
         u1 = c - self.base.fcu1(a, b) ** .5
         u2 = c - self.base.fcu2(a, b) ** .5
         u3 = c - self.base.fcu3(a, b) ** .5
         return u1, u2, u3
+
+    @property
+    def Uroots(self):
+        """For each root, compute the velocities ui."""
+        return np.array(self.compute_U(self.roots.T)).T
 
 
 class GivenUSolver(object):
@@ -304,17 +320,106 @@ class GivenUSolver(object):
             print c, r
             return -1
 
-    def root_find(self):
-        # FIXME: select root that will have largest c
-        # FIXME: Shouldn't we find c for all roots?
-        # mode-1 solution
-        root = 'upper_right'
-        # TODO: use some try, except logic to catch non existent roots
-        c = optimize.brentq(self.find_c, 0.2, 1, args=(root,))
-        solver = self.solver_given_c(c=c)
-        r = solver.roots[root][0]
-        return {'a, b': r, 'c': c}
+    def scan_c(self, low, hi, res=100):
+        C = np.linspace(low, hi, res)
+        solvers = [self.solver_given_c(c) for c in C]
+        roots = [s.roots for s in solvers]
+        velocities = [s.Uroots for s in solvers]
 
+        def append_c(array, c):
+            """Put a single value on the end of each row in 2d array."""
+            c_shape = (array.shape[0], 1)
+            C = np.ones(c_shape) * c
+            return np.hstack((array, C))
+
+        RC = np.row_stack(append_c(r, c) for r, c in zip(roots, C))
+        UC = np.row_stack(append_c(r, c) for r, c in zip(velocities, C))
+
+        return RC, UC
+
+    def root_find(self):
+        RC, UC = self.scan_c(-1.5, 1.5, 100)
+        a, b, cr, cg = RC.T
+
+        from sklearn.cluster import DBSCAN
+
+        # this value depends on the resolution with which we scan
+        # over c
+        # C = np.linspace(lo, hi, res)
+        # spacing = (hi - lo) / res
+        # e.g. (2 - -2) / 100 = 0.04
+        # then we need to consider spacing either side of cr
+        # so brackets of at least 2 * spacing to guarantee
+        # finding two points that span 1
+        s = 4 / 100.
+        r = 2 * s
+        diff = np.abs(cr - np.abs(cg))
+        close = np.where(diff < r)
+
+        data = RC[close]
+
+        a, b, cr, cg = data.T
+
+        x = np.arctan2(b, a)
+        # split into both positive and negative y
+        y_pos = cr - cg
+        y_neg = cr + cg
+
+        XY_pos = np.column_stack((x, y_pos))
+        XY_neg = np.column_stack((x, y_neg))
+
+        db_pos = DBSCAN(eps=r, min_samples=2)
+        db_pos.fit(XY_pos)
+
+        db_neg = DBSCAN(eps=r, min_samples=2)
+        db_neg.fit(XY_neg)
+
+
+        max_label = int(db_pos.labels_.max())
+        labels = range(max_label + 1)
+        branch_pos = [XY_pos[np.where(db_pos.labels_ == label)] for label in labels]
+        data_pos = [data[np.where(db_pos.labels_ == label)] for label in labels]
+
+        max_label = int(db_neg.labels_.max())
+        labels = range(max_label + 1)
+        branch_neg = [XY_neg[np.where(db_neg.labels_ == label)] for label in labels]
+        data_neg = [data[np.where(db_neg.labels_ == label)] for label in labels]
+
+        # First, select only the branches that contain a sign change.
+        def has_sign_change(branch_data):
+            x, y = branch_data.T
+            change = np.sum(np.abs(np.diff(np.sign(y))))
+            return bool(change)
+
+        branches_pos = [data for branch, data in zip(branch_pos, data_pos) if has_sign_change(branch)]
+        branches_neg = [data for branch, data in zip(branch_neg, data_neg) if has_sign_change(branch)]
+
+        def get_guesses(branches):
+            guesses = []
+            for branch in branches:
+                a, b, cr, cg = branch.T
+                guess = branch[np.argmin(np.abs(cr - np.abs(cg)))]
+                guesses.append(guess)
+            return guesses
+
+        guesses_pos = get_guesses(branches_pos)
+        guesses_neg = get_guesses(branches_neg)
+
+        guess_array = np.array(guesses_pos + guesses_neg)
+
+        s = self.s
+        u1, u2, u3 = self.U
+        h1, h2, h3 = self.H
+        # now find the exact solutions
+        lambsolver = LambBaseSolver(s=s, h1=h1, h2=h2, h3=h3,
+                                    u1=u1, u2=u2, u3=u3)
+
+        a, b, cr, cg = guess_array.T
+        # find the correct sign of cr by using the sign of cg
+        guesses = np.column_stack((a, b, cr * np.sign(cg)))
+        solutions = np.row_stack(lambsolver.solve(guess) for guess in guesses)
+
+        return solutions
 
 # alternative: formulate lambs base equations as 3 equations in
 # (a, b, c).
@@ -397,7 +502,7 @@ class LambBase(object):
         A, B, C = self.Ai
         alpha, beta = self.alpha, self.beta
 
-        return B ** 2 * (H1 * (self.cu1() / A ** 2) - alpha) / H2
+        return B ** 2 * (H1 * (self.cu1 / A ** 2) - alpha) / H2
 
     @property
     def cu3(self):
@@ -406,7 +511,7 @@ class LambBase(object):
         A, B, C = self.Ai
         alpha, beta = self.alpha, self.beta
 
-        return C ** 2 * (H1 * (self.cu1() / A ** 2) - (alpha + beta)) / H3
+        return C ** 2 * (H1 * (self.cu1 / A ** 2) - (alpha + beta)) / H3
 
     @property
     def fcu1(self):
@@ -424,7 +529,7 @@ class LambBase(object):
         return sp.lambdify((a, b), self.cu3)
 
 
-class Example_nsolve(object):
+class LambBaseSolver(object):
     def __init__(self, s=s, u1=u1, u2=u2, u3=u3, h1=h1, h2=h2, h3=h3):
         """Solve the base equations for (a, b, c) using sympy's
         nsolve. All the arguments need to be specified."""
@@ -440,8 +545,10 @@ class Example_nsolve(object):
         self.variables = (a, b, c)
 
     def solve(self, guess, **kwargs):
+        guess = tuple(guess)
         try:
             abc = sp.nsolve(self.equation_set, self.variables, guess, **kwargs)
+            abc = np.array(abc, dtype=np.float)
         except ValueError:
             # non convergence of solver
             abc = None
