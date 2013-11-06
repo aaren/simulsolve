@@ -22,6 +22,7 @@ Cb, U11, U21, d11, S = sp.symbols('Cb, U11, U21, d11, S')
 
 
 ### BASE EQUATIONS ###
+### TODO: put these inside a class as staticmethods
 def eq27(h=h, U0=U0, d0=d0, d1c=d1c):
     """From the Bernoulli equation in two layer extra critical flow."""
     Lh = d0 - d1c - h
@@ -290,19 +291,30 @@ class ConjugateStateSolver(object):
     def solver(self, (h, U0, d1c)):
         S = self.S
         d0 = self.d0
-        # convert from White and Helfrich notation to Lamb notation
-        # in the LAB frame
-        h1 = h
-        h2 = d1c
-        h3 = 1 - d1c - h
-        u1 = U0
-        u2 = U0 - U0 * (1 - d0) / (1 - d1c - h)
-        u3 = U0 - U0 * d0 / d1c
-        s = S / (1 - S)
-
-        solver = GivenUSolver(s=s, u1=u1, u2=u2, u3=u3, h1=h1, h2=h2, h3=h3)
-
+        parameters = self.convert_units(h, U0, d1c, S, d0)
+        solver = GivenUSolver(**parameters)
         return solver
+
+    @staticmethod
+    def convert_units(h, U0, d1c, S, d0):
+        """convert from White and Helfrich notation to Lamb notation
+        in the LAB frame.
+
+        Inputs: h   - gravity current height
+                U0  - gravity current speed
+                d1c - depth of first layer above current head
+                S   - stratification parameter
+                d0  - depth of first layer in front of the gravity current
+        """
+        p = dict(h1=h,
+                 h2=d1c,
+                 h3=1 - d1c - h,
+                 u1=U0,
+                 u2=U0 - U0 * (1 - d0) / (1 - d1c - h),
+                 u3=U0 - U0 * d0 / d1c,
+                  s=S / (1 - S),)
+        return p
+
 
 
 
