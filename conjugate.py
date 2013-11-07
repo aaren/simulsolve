@@ -3,6 +3,9 @@ import numpy as np
 from matplotlib._cntr import Cntr as mplCntr
 import scipy.optimize as opt
 
+# XXX: Write a basic test suite (compare to known two layer
+# solutions)
+
 #### Global symbols used for symby manipulations
 # wave amplitudes, speed
 a, b, c = sp.symbols('a, b, c')
@@ -429,7 +432,7 @@ class GivenUSolver(object):
         print "The bounds on the wave speeds are:"""
         print (c_l, c_r)
 
-        self.scan_res = 20
+        self.scan_res = 150
         self.Cg = np.linspace(self.c_lo, self.c_hi, self.scan_res)
 
     def solver_given_c(self, c=1):
@@ -746,7 +749,5 @@ class LambBaseSolver(object):
 # IV to type V behaviour?
 if __name__ == '__main__':
     usolver = GivenUSolver(s=0.5, h1=0.2, h2=0.35, h3=0.45, u1=0, u2=-0.4, u3=-0.1)
-    solver = usolver.solver_given_c(0.5)
-    # solutions = solver.roots
     solutions = usolver.root_find()
     print solutions
