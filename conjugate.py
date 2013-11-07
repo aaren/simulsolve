@@ -1,8 +1,7 @@
-from profilehooks import profile
-
 import sympy as sp
 import numpy as np
-import matplotlib.pyplot as plt
+from matplotlib._cntr import Cntr as mplCntr
+import scipy.optimize as opt
 
 #### Global symbols used for symby manipulations
 # wave amplitudes, speed
@@ -51,7 +50,8 @@ class FGSolver(object):
     A constraint on the allowed physical values of hi allows us to
     separate these roots (see self.insolutiontriangle).
     """
-    def __init__(self, s=1, h1=0.2, h2=0.6, h3=0.2, v1=1, v2=1, v3=1):
+    def __init__(self, s=1, h1=0.2, h2=0.6, h3=0.2, v1=1, v2=1, v3=1,
+                 base=None):
         """Inputs: s  - the stratification parameter
                    h1 - depth of layer 1
                    h2 - depth of layer 2
@@ -59,6 +59,7 @@ class FGSolver(object):
                    v1 - speed relation for layer 1
                    v2 - speed relation for layer 2
                    v3 - speed relation for layer 3.
+                   base - optional precalculated base equation set
         """
         # Create functions of (a, b) for these given parameters
         self.F = self.F(v1=v1, v2=v2, v3=v3, h1=h1, h2=h2, h3=h3, s=s)
@@ -69,10 +70,14 @@ class FGSolver(object):
         self.H = h1, h2, h3
         self.V = v1, v2, v3
 
-        self.base = LambBase(s=s, h1=h1, h2=h2, h3=h3)
+        # bounds on physical solutions
+        self.a_range = (-h1, 1 - h1)
+        self.b_range = (-(h1 + h2), h3)
 
-        # resolution of rough zero search (np.linspace)
-        self.resolution = 1000
+        self.base = base or LambBase(s=s, h1=h1, h2=h2, h3=h3)
+
+        # resolution of rough zero search (np.arange)
+        self.resolution = 0.01
 
     @staticmethod
     def F(a=a, b=b, v1=v1, v2=v2, v3=v3, h1=h1, h2=h2, h3=h3, s=s):
@@ -110,6 +115,32 @@ class FGSolver(object):
         c3 = (b > -(h1 + h2)) & (b < h3)
 
         return c1 & c2 & c3
+
+    def inplace_sort(self, points, i=0):
+        """Sort the list of points (not actually inplace), starting
+        at index i.
+        """
+        p_ = points
+        N = len(points)
+        sorted_points = []
+        while True:
+            # get the current point
+            point = p_[i]
+            # finish if next point is outside the solution triangle
+            if not self.insolutiontriangle(point):
+                break
+            # add the current point to the sorted points
+            sorted_points.append(point)
+            # finish if exhausted points
+            if len(sorted_points) == N:
+                break
+            # remove the current point from the points to consider
+            nonzero = np.hypot(*(p_ - point).T).nonzero()
+            p_ = p_[nonzero]
+            # find the index of the nearest point to the current point
+            distances = np.hypot(*(p_ - point).T)
+            i = distances.argmin()
+        return np.array(sorted_points)
 
     def rough_zero_ordered(self):
         """The zero contours of the function F(a, b) = 0 can be
@@ -162,60 +193,46 @@ class FGSolver(object):
         ulc = ulc[np.argsort(distance_from_corner)]
         points['upper_left_corner'] = ulc
 
-        @profile
-        def kdt_sort(points):
-            """Sort the set of given points along a line by minimising
-            the point to point distance. This forms a minimum spanning
-            path for the set of points, that visits each point exactly
-            once.
-
-            Requires the point at index 0 to be at one end of the
-            line.
-            """
-            # create a kd-tree
-            from scipy.spatial import KDTree
-            # copy so we don't change the input data
-            kdt = KDTree(points.copy())
-
-            # walk the tree (the list of points), finding the three
-            # nearest points. The nearest is the point itself, so select
-            # the next nearest as long as it isn't the last point found
-
-            # starting point, at some known extreme
-            indices = [0]
-            while True:
-                point = kdt.data[indices[-1]]
-                distances, (i0, i1) = kdt.query(point, 2)
-                # break if exhausted the points or next point
-                # would be outside the solution triangle
-                if i1 == kdt.data.shape[0]:
-                    break
-                next_point = kdt.data[i1]
-                if not self.insolutiontriangle(next_point):
-                    break
-                # eliminate this index from consideration
-                kdt.data[i0] *= np.nan
-                indices.append(i1)
-            return points[indices]
-
-        ordered_segments = {segment: kdt_sort(points[segment])
+        ordered_segments = {segment: self.inplace_sort(points[segment])
                             for segment in points}
 
         return ordered_segments
 
     def global_rough_zero(self, f):
-        x = np.linspace(-1, 1, self.resolution)
-        A, B = np.meshgrid(x, x)
+        a_min, a_max = self.a_range
+        b_min, b_max = self.b_range
+        s = 2 * self.resolution  # extra to consider
+
+        x = np.arange(a_min - s, a_max + s, self.resolution)
+        y = np.arange(b_min - s, b_max + s, self.resolution)
+        A, B = np.meshgrid(x, y)
+
         fab = f(A, B)
         # intersection between contour sets is done here:
         # http://stackoverflow.com/questions/17416268/
         # but we'll just use the bit for getting points
         # from matplotlib contour
-        contour = plt.contour(A, B, fab, levels=[0])
-        points = np.row_stack(p.vertices for line in contour.collections
-                              for p in line.get_paths())
-        a, b = points.T
-        return a, b
+        # contour = plt.contour(A, B, fab, levels=[0])
+        # points = np.row_stack(p.vertices for line in contour.collections
+                              # for p in line.get_paths())
+
+        # use the contouring function directly.
+        # WHY? because this avoids drawing any axes, which adds
+        # overhead.
+        # there is also one of these in chaco - they are slightly
+        # different in that matplotlib gives more output with trace
+        # chaco: from chaco.contour.contour import Cntr
+        contour = mplCntr(A, B, fab)
+        # trace out the zero contour
+        traces = contour.trace(0)
+        # traces is a number of arrays of points and then
+        # the same number of arrays of integers that I don't know
+        # the meaning of (called allkinds in the codebase).
+        # It is this that chaco doesn't have in the output.
+        # Ignore the integers.
+        zero_contour = np.row_stack(traces[:len(traces) / 2]).T
+        # this has shape (ndim, #points)
+        return zero_contour
         # you could create a kdtree with the F contour points
         # and one with G, then find nearest neighbours
         # e.g. kdt = KDTree(f_points)
@@ -246,19 +263,21 @@ class FGSolver(object):
         zero using a non linear solver with a newton raphson
         method.
 
+        Used to use sympy.nsolve, but *much* faster to use
+        scipy.optimize.fsolve
+
         Input: guess - a numpy array of floats [a, b]
 
         Output: a numpy array of floats [a, b]
                 OR an empty array if no root can be found.
         """
-        # nsolve can't take arrays as input for some reason
-        guess = guess.tolist()
-        variables = (a, b)
-        equation_set = (self.F, self.G)
+        # function for fsolve
+        def E(r):
+            return self.f(*r), self.g(*r)
         try:
-            ab = sp.nsolve(equation_set, variables, guess, **kwargs)
-        except ValueError:
-            ab = []
+            ab = opt.fsolve(E, guess)
+        except Warning:
+            ab = [None, None]
         return np.array(ab, dtype=float)
 
     @property
@@ -271,6 +290,7 @@ class FGSolver(object):
              (a1, b1, c1),
              ...]
 
+        Returns None if there are no roots found.
         """
         if not hasattr(self, '_roots'):
             roots = self.calculate_roots()
@@ -289,26 +309,34 @@ class FGSolver(object):
 
         N.B. the value for c is the *magnitude* only.
         """
+        roots = self.enhanced_roots
+        # remove trivial zero solutions
+        nonzero_roots = np.row_stack(r for r in roots
+                                     if np.hypot(*r) > self.resolution)
+        # compute c for each of the roots
+        C = self.compute_c(nonzero_roots.T)
+        abc_roots = np.column_stack((nonzero_roots, C))
+
+        return abc_roots
+
+    @property
+    def rough_roots(self):
+        """Compute the rough positions of the system roots."""
         # compute the rough zero contours of F
         zero_contours = self.rough_zero_ordered().values()
         # find where G becomes zero on each branch in each quadrant
         roughroots = np.row_stack(self.zeroG(branch)
                                   for branch in zero_contours)
         # remove duplicates
-        guesses = unique(roughroots)
-        # find exact solutions near each of the guesses
-        enhanced_roots = [self.enhance(guess) for guess in guesses]
-        # reject roots that didn't converge
-        enhanced_roots = np.row_stack(r for r in enhanced_roots if len(r) > 0)
-        # remove trivial zero solutions
-        res = 2. / self.resolution
-        nonzero_enhanced_roots = np.row_stack(g for g in enhanced_roots
-                                                if np.hypot(*g) > res)
-        # compute c for each of the roots
-        C = self.compute_c(nonzero_enhanced_roots.T)
-        abc_roots = np.column_stack((nonzero_enhanced_roots, C))
+        return unique(roughroots)
 
-        return abc_roots
+    @property
+    def enhanced_roots(self):
+        # find exact solutions near each of the guesses
+        guesses = [self.enhance(guess) for guess in self.rough_roots]
+        # reject roots that didn't converge (Nan's)?
+        enhanced_roots = np.row_stack(guesses)
+        return enhanced_roots
 
     def compute_c(self, (a, b)):
         """Given values of (a, b), calculate
@@ -361,6 +389,7 @@ class GivenUSolver(object):
         self.U = u1, u2, u3
         self.H = h1, h2, h3
         self.s = s
+        self.base = LambBase(s=s, h1=h1, h2=h2, h3=h3)
 
         # Calculate upper and lower bounds on c.
         #
@@ -429,7 +458,6 @@ class GivenUSolver(object):
         C = Cg or self.Cg
         solvers = [self.solver_given_c(c) for c in C]
         roots = [s.roots for s in solvers]
-        velocities = [s.Uroots for s in solvers]
 
         def append_c(array, c):
             """Put a single value on the end of each row in 2d array."""
@@ -438,12 +466,11 @@ class GivenUSolver(object):
             return np.hstack((array, C))
 
         RC = np.row_stack(append_c(r, c) for r, c in zip(roots, C))
-        UC = np.row_stack(append_c(r, c) for r, c in zip(velocities, C))
 
-        return RC, UC
+        return RC
 
     def root_find(self):
-        RC, UC = self.scan_c()
+        RC = self.scan_c()
         a, b, cr, cg = RC.T
 
         # this value depends on the resolution with which we scan
@@ -656,7 +683,9 @@ class LambBase(object):
         """Create a function f(a, b) = (c - U1) ** 2.
 
         """
-        return sp.lambdify((a, b), self.cu1)
+        if not hasattr(self, '_fcu1'):
+            setattr(self, '_fcu1', sp.lambdify((a, b), self.cu1))
+        return self._fcu1
 
     @property
     def fcu2(self):
@@ -698,11 +727,10 @@ class LambBaseSolver(object):
         guess = tuple(guess)
         try:
             abc = sp.nsolve(self.equation_set, self.variables, guess, **kwargs)
-            abc = np.array(abc, dtype=np.float)
         except ValueError:
             # non convergence of solver
-            abc = None
-        return abc
+            abc = [None] * len(guess)
+        return np.array(abc, dtype=np.float)
 
 
 # TODO: for a specific (S, d0) compute the supercritical solution
@@ -718,5 +746,7 @@ class LambBaseSolver(object):
 # IV to type V behaviour?
 if __name__ == '__main__':
     usolver = GivenUSolver(s=0.5, h1=0.2, h2=0.35, h3=0.45, u1=0, u2=-0.4, u3=-0.1)
+    solver = usolver.solver_given_c(0.5)
+    # solutions = solver.roots
     solutions = usolver.root_find()
     print solutions
