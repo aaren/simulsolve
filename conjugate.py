@@ -73,14 +73,21 @@ class FGSolver(object):
         self.H = h1, h2, h3
         self.V = v1, v2, v3
 
-        # bounds on physical solutions
-        self.a_range = (-h1, 1 - h1)
-        self.b_range = (-(h1 + h2), h3)
-
         self.base = base or LambBase(s=s, h1=h1, h2=h2, h3=h3)
 
+        # Sample grid for finding F(a, b) = 0
         # resolution of rough zero search (np.arange)
         self.resolution = 0.01
+
+        # bounds on physical solutions
+        a_min, a_max = (-h1, 1 - h1)
+        b_min, b_max = (-(h1 + h2), h3)
+
+        s = 2 * self.resolution  # extra edge to consider
+        x = np.arange(a_min - s, a_max + s, self.resolution)
+        y = np.arange(b_min - s, b_max + s, self.resolution)
+
+        self.AB = np.meshgrid(x, y)
 
     @staticmethod
     def F(a=a, b=b, v1=v1, v2=v2, v3=v3, h1=h1, h2=h2, h3=h3, s=s):
@@ -145,6 +152,51 @@ class FGSolver(object):
             i = distances.argmin()
         return np.array(sorted_points)
 
+    def global_rough_zero(self, f, A, B):
+        """Find where the function f, sampled over (A, B) is equal
+        to zero.
+
+        Returns an array of points that lie on the zero contour,
+        shape (2, N) where N is the number of points found.
+
+        This is used to find the zeros of F, along which G can be evaluated.
+
+        An alternative method would be to find the intersections of
+        the zero contours of both F and G. A method for this is
+        found here:
+        http://stackoverflow.com/questions/17416268/
+
+        Scipy doesn't have a contouring function, but matplotlib does:
+
+            contour = plt.contour(A, B, fab, levels=[0])
+            points = np.row_stack(p.vertices for line in contour.collections
+                                  for p in line.get_paths())
+
+        However, this creates an axes instance and does drawing even
+        when we just want the contour. This is a problem when the contour
+        calculation is the inner loop of your program.
+
+        `plt.contour` calls a contouring function implemented in C. We call
+        this directly here. This isn't best practice, but it is a lot faster
+        in this case.
+
+        There is a contouring function in chaco that is based on
+        nearly the same cntr.c but which gives slightly different
+        output to matplotlib.
+
+        The matplotlib contour.trace output comes with integers that
+        are used as 'allkinds' in matplotlib, but which we ignore here.
+
+        chaco: from chaco.contour.contour import Cntr
+        """
+        fab = f(A, B)
+        contour = mplCntr(A, B, fab)
+        # trace out the zero contour
+        traces = contour.trace(0)
+        # Ignore the kinds....
+        zero_contour = np.row_stack(traces[:len(traces) / 2]).T
+        return zero_contour
+
     def rough_zero_ordered(self):
         """The zero contours of the function F(a, b) = 0 can be
         separated distinctly in the (a, b) plane.
@@ -157,7 +209,7 @@ class FGSolver(object):
         line starting from one end.
         """
         # extract the rough locations of the zeros
-        a, b = self.global_rough_zero(self.f)
+        a, b = self.global_rough_zero(self.f, *self.AB)
         f0 = np.column_stack((a, b))
 
         points = {}
@@ -201,49 +253,6 @@ class FGSolver(object):
 
         return ordered_segments
 
-    def global_rough_zero(self, f):
-        a_min, a_max = self.a_range
-        b_min, b_max = self.b_range
-        s = 2 * self.resolution  # extra to consider
-
-        x = np.arange(a_min - s, a_max + s, self.resolution)
-        y = np.arange(b_min - s, b_max + s, self.resolution)
-        A, B = np.meshgrid(x, y)
-
-        fab = f(A, B)
-        # intersection between contour sets is done here:
-        # http://stackoverflow.com/questions/17416268/
-        # but we'll just use the bit for getting points
-        # from matplotlib contour
-        # contour = plt.contour(A, B, fab, levels=[0])
-        # points = np.row_stack(p.vertices for line in contour.collections
-                              # for p in line.get_paths())
-
-        # use the contouring function directly.
-        # WHY? because this avoids drawing any axes, which adds
-        # overhead.
-        # there is also one of these in chaco - they are slightly
-        # different in that matplotlib gives more output with trace
-        # chaco: from chaco.contour.contour import Cntr
-        contour = mplCntr(A, B, fab)
-        # trace out the zero contour
-        traces = contour.trace(0)
-        # traces is a number of arrays of points and then
-        # the same number of arrays of integers that I don't know
-        # the meaning of (called allkinds in the codebase).
-        # It is this that chaco doesn't have in the output.
-        # Ignore the integers.
-        zero_contour = np.row_stack(traces[:len(traces) / 2]).T
-        # this has shape (ndim, #points)
-        return zero_contour
-        # you could create a kdtree with the F contour points
-        # and one with G, then find nearest neighbours
-        # e.g. kdt = KDTree(f_points)
-        # kdt.query(g_points, k=1, distance_upper_bound=something)
-        # this will pick up curves that very nearly intersect
-        # but not quite - although this is a very particular edge
-        # case.
-
     def zeroG(self, f0):
         """Evaluate G along the lines F=0.
 
@@ -263,6 +272,17 @@ class FGSolver(object):
         zero = np.where(np.diff(np.sign(g)) != 0)
         ab = np.vstack((f0[zero], f0[zero])).squeeze()
         return ab
+
+    @property
+    def rough_roots(self):
+        """Compute the rough positions of the system roots."""
+        # compute the rough zero contours of F
+        zero_contours = self.rough_zero_ordered().values()
+        # find where G becomes zero on each branch in each quadrant
+        roughroots = np.row_stack(self.zeroG(branch)
+                                  for branch in zero_contours)
+        # remove duplicates
+        return unique(roughroots)
 
     def enhance(self, guess, **kwargs):
         """Using a rough guess for (a, b), converge on the
@@ -287,21 +307,12 @@ class FGSolver(object):
         return np.array(ab, dtype=float)
 
     @property
-    def roots(self):
-        """Calculate the roots of the system.
-
-        Returns an array of roots in (a, b, c):
-
-            [(a0, b0, c0),
-             (a1, b1, c1),
-             ...]
-
-        Returns None if there are no roots found.
-        """
-        if not hasattr(self, '_roots'):
-            roots = self.calculate_roots()
-            setattr(self, '_roots', roots)
-        return self._roots
+    def enhanced_roots(self):
+        # find exact solutions near each of the guesses
+        guesses = [self.enhance(guess) for guess in self.rough_roots]
+        # reject roots that didn't converge (Nan's)?
+        enhanced_roots = np.row_stack(guesses)
+        return enhanced_roots
 
     def calculate_roots(self):
         """Compute the roots of the system, excluding trivial zero
@@ -324,25 +335,6 @@ class FGSolver(object):
         abc_roots = np.column_stack((nonzero_roots, C))
 
         return abc_roots
-
-    @property
-    def rough_roots(self):
-        """Compute the rough positions of the system roots."""
-        # compute the rough zero contours of F
-        zero_contours = self.rough_zero_ordered().values()
-        # find where G becomes zero on each branch in each quadrant
-        roughroots = np.row_stack(self.zeroG(branch)
-                                  for branch in zero_contours)
-        # remove duplicates
-        return unique(roughroots)
-
-    @property
-    def enhanced_roots(self):
-        # find exact solutions near each of the guesses
-        guesses = [self.enhance(guess) for guess in self.rough_roots]
-        # reject roots that didn't converge (Nan's)?
-        enhanced_roots = np.row_stack(guesses)
-        return enhanced_roots
 
     def compute_c(self, (a, b)):
         """Given values of (a, b), calculate
@@ -367,6 +359,23 @@ class FGSolver(object):
         c_squared = fcu1(a, b) / v1 ** 2
 
         return c_squared ** .5
+
+    @property
+    def roots(self):
+        """Calculate the roots of the system.
+
+        Returns an array of roots in (a, b, c):
+
+            [(a0, b0, c0),
+             (a1, b1, c1),
+             ...]
+
+        Returns None if there are no roots found.
+        """
+        if not hasattr(self, '_roots'):
+            roots = self.calculate_roots()
+            setattr(self, '_roots', roots)
+        return self._roots
 
     def compute_U(self, (a, b, c)):
         """For given a, b, c calculate the velocities ui."""
