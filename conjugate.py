@@ -251,9 +251,12 @@ class FGSolver(object):
 
         Inputs:
             f0 - an array of (a, b), shape (N, 2)
+                 If f0 is empty, return an empty array.
 
         Return (a, b) in the vicinity of the sign changes.
         """
+        if f0.size == 0:
+            return f0.reshape(-1, 2)
         g = self.g(*f0.T)
         # find zero crossings
         # TODO: more elegant? like interpolating?
