@@ -332,7 +332,8 @@ class FGSolver(object):
                                      if np.hypot(*r) > self.resolution)
         # compute c for each of the roots
         C = self.compute_c(nonzero_roots.T)
-        abc_roots = np.column_stack((nonzero_roots, C))
+        # order by speed
+        abc_roots = np.column_stack((nonzero_roots, C))[C.argsort()]
 
         return abc_roots
 
@@ -581,7 +582,9 @@ class GivenUSolver(object):
         guesses = np.column_stack((a, b, cr * np.sign(cg)))
         solutions = np.row_stack(lambsolver.solve(guess) for guess in guesses)
 
-        return solutions
+        # order by increasing speed
+        C = solutions[:, -1]
+        return solutions[C.argsort()]
 
 
 class LambBase(object):
