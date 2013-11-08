@@ -281,8 +281,12 @@ class FGSolver(object):
         # find where G becomes zero on each branch in each quadrant
         roughroots = np.row_stack(self.zeroG(branch)
                                   for branch in zero_contours)
-        # remove duplicates
-        return unique(roughroots)
+
+        if roughroots.size == 0:
+            return roughroots
+        else:
+            # remove duplicates
+            return unique(roughroots)
 
     def enhance(self, guess, **kwargs):
         """Using a rough guess for (a, b), converge on the
@@ -300,10 +304,7 @@ class FGSolver(object):
         # function for fsolve
         def E(r):
             return self.f(*r), self.g(*r)
-        try:
-            ab = opt.fsolve(E, guess)
-        except Warning:
-            ab = [None, None]
+        ab = opt.fsolve(E, guess)
         return np.array(ab, dtype=float)
 
     @property
@@ -311,7 +312,11 @@ class FGSolver(object):
         # find exact solutions near each of the guesses
         guesses = [self.enhance(guess) for guess in self.rough_roots]
         # reject roots that didn't converge (Nan's)?
-        enhanced_roots = np.row_stack(guesses)
+        if len(guesses) != 0:
+            enhanced_roots = np.row_stack(guesses)
+        else:
+            enhanced_roots = np.empty((0, 2))
+
         return enhanced_roots
 
     def calculate_roots(self):
@@ -327,15 +332,24 @@ class FGSolver(object):
         N.B. the value for c is the *magnitude* only.
         """
         roots = self.enhanced_roots
+        if roots.size == 0:
+            return roots.reshape((0, 3))
         # remove trivial zero solutions
-        nonzero_roots = np.row_stack(r for r in roots
-                                     if np.hypot(*r) > self.resolution)
+        a, b = roots.T
+        scale = np.hypot(a, b)
+        nonzero = np.where(scale > self.resolution)
+        nonzero_roots = roots[nonzero]
         # compute c for each of the roots
         C = self.compute_c(nonzero_roots.T)
-        # order by speed
-        abc_roots = np.column_stack((nonzero_roots, C))[C.argsort()]
-
-        return abc_roots
+        # include speed
+        abc_roots = np.column_stack((nonzero_roots, C))
+        # have to catch the case that there are no roots, in
+        # which case the array is empty and we can't sort it.
+        # empty arrays are a hassle
+        if abc_roots.size == 0:
+            return abc_roots
+        else:
+            return abc_roots[C.argsort()]
 
     def compute_c(self, (a, b)):
         """Given values of (a, b), calculate
@@ -430,8 +444,9 @@ class GivenUSolver(object):
         # and this occurs when |u3 - u1| = sqrt((1 + s) / s).
         # if |u3 - u1| exceeds this bound, there are *no solutions*.
         if np.abs(u3 - u1) >= g13 ** .5:
-            print "There are probably no solutions for these speeds!"
-            print "Limiting layer speed difference is %s" % g13 ** .5
+            pass
+            # print "There are probably no solutions for these speeds!"
+            # print "Limiting layer speed difference is %s" % g13 ** .5
         # When |u3 - u1| < sqrt((1 + s) / s), the rightward
         # propagating wave in the two layer system has speed
         c_r = 0.5 * ((u3 - u1) + g13 ** .5) + u1
@@ -442,10 +457,10 @@ class GivenUSolver(object):
         # wave speed in the three layer system.
         self.c_hi = c_r
         self.c_lo = c_l
-        print "The bounds on the wave speeds are:"""
-        print (c_l, c_r)
+        # print "The bounds on the wave speeds are:"""
+        # print (c_l, c_r)
 
-        self.scan_res = 150
+        self.scan_res = 80
         self.Cg = np.linspace(self.c_lo, self.c_hi, self.scan_res)
 
     def solver_given_c(self, c=1):
