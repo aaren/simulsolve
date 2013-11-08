@@ -499,81 +499,106 @@ class GivenUSolver(object):
         # finding two points that span 1
         r = 2 * (self.c_hi - self.c_lo) / self.scan_res
 
-        # limit data to values that are near to a root (cr = cg)
-        diff = np.abs(cr - np.abs(cg))
-        close = np.where(diff < r)
-        data = RC[close]
-
-        # extract from limited data
-        a, b, cr, cg = data.T
-
-        # Now we project the data so that the roots are well
-        # separated
-
-        # angle that the roots make with +a axis in the (a, b) plane
-        x = np.arctan2(b, a)
-
+        # limit data to values that are near to a root (cr = |cg|)
         # split into positive and negative root velocities.
         # we do this using the fact that cr is a magnitude.
-        y_pos = cr - cg
-        y_neg = cr + cg
+        diff_pos = np.abs(cr - np.abs(cg))
+        diff_neg = np.abs(cr + np.abs(cg))
+        close_positive = RC[np.where(diff_pos < r)]
+        close_negative = RC[np.where(diff_neg < r)]
 
+        # Now we project the close_data so that the roots are well
+        # separated
+        a, b, cr, cg = close_positive.T
+        # angle that the roots make with +a axis in the (a, b) plane
+        x_pos = np.arctan2(b, a)
+        y_pos = cr - cg
         # stick all the points together. This is now a re-projection
         # of the original data that is near to a root into a space
         # where the roots are separated.
-        XY_pos = np.column_stack((x, y_pos))
-        XY_neg = np.column_stack((x, y_neg))
+        XY_pos = np.column_stack((x_pos, y_pos))
 
-        # use a density based sort to separate points into distinct
-        # clusters, each one corresponding to a distinct root.
-        # There is an edge case here in that roots can become
-        # degenerate: as the roots come closer together, they will
-        # be treated as a single root cluster at some non-zero
-        # separation distance.
+        a, b, cr, cg = close_negative.T
+        x_neg = np.arctan2(b, a)
+        y_neg = cr + cg
+        XY_neg = np.column_stack((x_neg, y_neg))
+
         from sklearn.cluster import DBSCAN
 
-        db_pos = DBSCAN(eps=r, min_samples=2)
-        db_pos.fit(XY_pos)
+        def cluster_points(XY):
+            """Find clusters of points in XY and return a list of the indices
+            of the points in each cluster.
+            """
+            # use a density based sort to separate points into distinct
+            # clusters, each one corresponding to a distinct root.
+            # There is an edge case here in that roots can become
+            # degenerate: as the roots come closer together, they will
+            # be treated as a single root cluster at some non-zero
+            # separation distance.
+            db = DBSCAN(eps=r, min_samples=2)
+            db.fit(XY)
 
-        db_neg = DBSCAN(eps=r, min_samples=2)
-        db_neg.fit(XY_neg)
+            max_label = int(db.labels_.max())
+            labels = range(max_label + 1)
+            where_label = [np.where(db.labels_ == label) for label in labels]
+            return where_label
 
-        max_label = int(db_pos.labels_.max())
-        labels = range(max_label + 1)
-        branch_pos = [XY_pos[np.where(db_pos.labels_ == label)] for label in labels]
-        data_pos = [data[np.where(db_pos.labels_ == label)] for label in labels]
+        data_pos = [close_positive[indices] for indices in cluster_points(XY_pos)]
+        data_neg = [close_negative[indices] for indices in cluster_points(XY_neg)]
 
-        max_label = int(db_neg.labels_.max())
-        labels = range(max_label + 1)
-        branch_neg = [XY_neg[np.where(db_neg.labels_ == label)] for label in labels]
-        data_neg = [data[np.where(db_neg.labels_ == label)] for label in labels]
+        # return data_pos, data_neg
 
-        # First, select only the branches that contain a sign change.
-        def has_sign_change(branch_data):
-            x, y = branch_data.T
-            change = np.sum(np.abs(np.diff(np.sign(y))))
-            return bool(change)
+        def get_guess(branch):
+            """branch is a cluster of points either side of cr = cg.
 
-        branches_pos = [data for branch, data in zip(branch_pos, data_pos) if has_sign_change(branch)]
-        branches_neg = [data for branch, data in zip(branch_neg, data_neg) if has_sign_change(branch)]
+            Find the two closest points to cr = cg and average them
+            to make a guess at where the crossing would be.
+            """
+            cr, cg = branch.T[-2:]
+            cdiff = cr - np.abs(cg)
+            c_above = cdiff > 0
+            c_below = cdiff < 0
+            points_above = branch[c_above]
+            points_below = branch[c_below]
 
-        def get_guesses(branches):
-            guesses = []
-            for branch in branches:
-                a, b, cr, cg = branch.T
-                guess = branch[np.argmin(np.abs(cr - np.abs(cg)))]
-                guesses.append(guess)
-            return guesses
+            closest_above = points_above[cdiff[c_above].argmin()]
+            closest_below = points_below[cdiff[c_below].argmax()]
 
-        guesses_pos = get_guesses(branches_pos)
-        guesses_neg = get_guesses(branches_neg)
+            cr_a, cg_a = closest_above[-2:]
+            cr_b, cg_b = closest_below[-2:]
+
+            cd_a = cr_a - np.abs(cg_a)
+            cd_b = cr_b - np.abs(cg_b)
+            # average out these two points, weighted by proximity to
+            # crossing
+            wa = 1 / cd_a
+            wb = 1 / cd_b
+            guess = (closest_above * wa + closest_below * wb) / (wa + wb)
+            return guess
+
+        def has_sign_change(cluster):
+            """Does this cluster of points (a, b, cr, cg) contain
+            a sign change in cr - |cg|?
+            """
+            cr, cg = cluster.T[-2:]
+            cdiff = cr - np.abs(cg)
+            change = np.diff(np.sign(cdiff)).any()
+            return change
+
+        # Create a guess for where cr = cg from clusters of points
+        # that cross the cr - |cg| axis.
+        guesses_pos = [get_guess(branch) for branch in data_pos
+                       if has_sign_change(branch)]
+        guesses_neg = [get_guess(branch) for branch in data_neg
+                       if has_sign_change(branch)]
 
         guess_array = np.array(guesses_pos + guesses_neg)
 
+        # now find the exact solutions to the base equations using
+        # these guesses
         s = self.s
         u1, u2, u3 = self.U
         h1, h2, h3 = self.H
-        # now find the exact solutions
         lambsolver = LambBaseSolver(s=s, h1=h1, h2=h2, h3=h3,
                                     u1=u1, u2=u2, u3=u3)
 
@@ -763,6 +788,7 @@ class LambBaseSolver(object):
 # If there is a point U0=c, does it match the transition from type
 # IV to type V behaviour?
 if __name__ == '__main__':
-    usolver = GivenUSolver(s=0.5, h1=0.2, h2=0.35, h3=0.45, u1=0, u2=-0.4, u3=-0.1)
+    usolver = GivenUSolver(s=0.5, h1=0.2, h2=0.35, h3=0.45,
+                           u1=0, u2=-0.4, u3=-0.1)
     solutions = usolver.root_find()
     print solutions
