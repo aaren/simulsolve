@@ -22,107 +22,113 @@ Cb, U11, U21, d11, S = sp.symbols('Cb, U11, U21, d11, S')
 
 
 ### BASE EQUATIONS ###
-### TODO: put these inside a class as staticmethods
-def eq27(h=h, U0=U0, d0=d0, d1c=d1c):
-    """From the Bernoulli equation in two layer extra critical flow."""
-    Lh = d0 - d1c - h
-    Rh = (U0 ** 2 / 2) * ((d0 ** 2 / d1c ** 2)
-                          - ((1 - d0) ** 2 / (1 - d1c - h) ** 2))
-    f = Lh - Rh
-    return f
+class WHBase(object):
+    @staticmethod
+    def eq27(h=h, U0=U0, d0=d0, d1c=d1c):
+        """From the Bernoulli equation in two layer extra critical flow."""
+        Lh = d0 - d1c - h
+        Rh = (U0 ** 2 / 2) * ((d0 ** 2 / d1c ** 2)
+                              - ((1 - d0) ** 2 / (1 - d1c - h) ** 2))
+        f = Lh - Rh
+        return f
 
+    def eq28(h=h, U0=U0, d0=d0, d1c=d1c, S=S):
+        """Momentum conservation in two layer extra critical flow."""
+        f = (h ** 2 / (2 * S)) - (h / S) + (d1c ** 2 / 2) - (d0 ** 2 / 2) \
+            + d0 - d1c + (d1c * h) \
+            + U0 ** 2 * (-.5 + (d0 ** 2 / d1c) + (1 - d0) ** 2 / (1 - d1c - h))
+        return f
 
-def eq28(h=h, U0=U0, d0=d0, d1c=d1c, S=S):
-    """Momentum conservation in two layer extra critical flow."""
-    f = (h ** 2 / (2 * S)) - (h / S) + (d1c ** 2 / 2) - (d0 ** 2 / 2) \
-        + d0 - d1c + (d1c * h) \
-        + U0 ** 2 * (-.5 + (d0 ** 2 / d1c) + (1 - d0) ** 2 / (1 - d1c - h))
-    return f
+    @staticmethod
+    def eq29(h=h, S=S, U0=U0, d0=d0, d1c=d1c):
+        f = h * (1 - S) / S - (U0 ** 2 / 2) * (d0 ** 2 / d1c ** 2)
+        return f
 
+    @staticmethod
+    def eq211(h=h, U0=U0, d1c=d1c, d0=d0):
+        """white-helfrich2012 use h where they mean h/d0 - the scaling in
+        Baines is w.r.t d0 rather than H. Corrected here."""
+        f = (U0) ** 2 * ((d0 ** 2 / d1c ** 3)
+                         + (1 - d0) ** 2 / (1 - d1c - h) ** 3) - 1
+        return f
 
-def eq29(h=h, S=S, U0=U0, d0=d0, d1c=d1c):
-    f = h * (1 - S) / S - (U0 ** 2 / 2) * (d0 ** 2 / d1c ** 2)
-    return f
+    @staticmethod
+    def eq212(h=h, U0=U0, d1c=d1c, d0=d0):
+        """NB. white-helfrich2012 has a sign error in eq212. corrected here.
 
+        white-helfrich2012 use h where they mean h/d0 - the scaling in
+        Baines is w.r.t d0 rather than H. Corrected here."""
+        f = 0.5 * (U0) ** 2 * ((d0 ** 2 / d1c ** 2)
+                               - (1 - d0) ** 2 / (1 - d1c - h) ** 2) \
+                + d1c + (h - d0)
+        return f
 
-def eq211(h=h, U0=U0, d1c=d1c, d0=d0):
-    """white-helfrich2012 use h where they mean h/d0 - the scaling in
-    Baines is w.r.t d0 rather than H. Corrected here."""
-    f = (U0) ** 2 * ((d0 ** 2 / d1c ** 3) + (1 - d0) ** 2 / (1 - d1c - h) ** 3) - 1
-    return f
+    @staticmethod
+    def eq31(U0=U0, Cb=Cb, d11=d11, d0=d0):
+        """Klemp et al bore jump condition"""
+        LHS = (U0 + Cb)
+        RHSnumer = (d11 ** 2 * (1 - d11) * (2 - d11 - d0))
+        RHSdenom = (d11 + d0 + d11 ** 2 - 3 * d0 * d11)
+        RHS = (RHSnumer / RHSdenom) ** .5
+        return LHS - RHS
 
+    @staticmethod
+    def eq33(U11=U11, Cb=Cb, d11=d11, U0=U0, d0=d0):
+        """Mass conservation #1"""
+        f = (U11 + Cb) * d11 - (U0 + Cb) * d0
+        return f
 
-def eq212(h=h, U0=U0, d1c=d1c, d0=d0):
-    """NB. white-helfrich2012 has a sign error in eq212. corrected here.
+    @staticmethod
+    def eq34(U21=U21, Cb=Cb, d11=d11, U0=U0, d0=d0):
+        """Mass conservation #2"""
+        f = (U21 + Cb) * (1 - d11) - (U0 + Cb) * (1 - d0)
+        return f
 
-    white-helfrich2012 use h where they mean h/d0 - the scaling in
-    Baines is w.r.t d0 rather than H. Corrected here."""
-    f = 0.5 * (U0) ** 2 * ((d0 ** 2 / d1c ** 2) - (1 - d0) ** 2 / (1 - d1c - h) ** 2) + d1c + (h - d0)
-    return f
+    @staticmethod
+    def eq35(d11=d11, d1c=d1c, h=h, U11=U11, U21=U21):
+        """Bernoulli"""
+        f = d11 - d1c - h - (U11 ** 2 / 2) * (d11 ** 2 / d1c ** 2 - 1) \
+                - (U21 ** 2 / 2) * (1 - (1 - d11) ** 2 / (1 - d1c - h) ** 2)
+        return f
 
+    @staticmethod
+    def eq36(h=h, S=S, d1c=d1c, d11=d11, U11=U11, U21=U21):
+        """Momentum conservation. White & Helfrich 2012 contains an error.
+        All d_0 should be replaced with d_11. Corrected here.
+        """
+        f = (h ** 2 / (2 * S)) - h / (S) + (d1c ** 2 / 2) - (d11 ** 2 / 2) \
+            + d11 - d1c + d1c * h \
+            + (U11 ** 2) * (0.5 + (d11 ** 2 / d1c) - d11) \
+            + (U21 ** 2) * ((1 - d11) ** 2 / (1 - d1c - h) + d11 - 1)
+        return f
 
-def eq31(U0=U0, Cb=Cb, d11=d11, d0=d0):
-    """Klemp et al bore jump condition"""
-    LHS = (U0 + Cb)
-    RHSnumer = (d11 ** 2 * (1 - d11) * (2 - d11 - d0))
-    RHSdenom = (d11 + d0 + d11 ** 2 - 3 * d0 * d11)
-    RHS = (RHSnumer / RHSdenom) ** .5
-    return LHS - RHS
+    @staticmethod
+    def eq38(U0=U0, S=S, h=h, d11=d11, d1c=d1c, U11=U11, Dc=0):
+        """Energy dissipation. Dc=0 gives rightward bound of resonant wedge."""
+        f = h * ((1 - S) / S) - (U11 ** 2 / 2) * (d11 ** 2 / d1c ** 2) \
+                - Dc / U0
+        return f
 
+    @staticmethod
+    def eq39(U0=U0, d11=d11, U11=U11, U21=U21):
+        """Bore criticality. Upper bound of resonant wedge."""
+        # TODO: verify this
+        f = U0 + (U11 - U21) * (1 - 2 * d11) \
+                - ((1 - (U11 - U21) ** 2) * d11 * (1 - d11)) ** .5
+        return f
 
-def eq33(U11=U11, Cb=Cb, d11=d11, U0=U0, d0=d0):
-    """Mass conservation #1"""
-    f = (U11 + Cb) * d11 - (U0 + Cb) * d0
-    return f
-
-
-def eq34(U21=U21, Cb=Cb, d11=d11, U0=U0, d0=d0):
-    """Mass conservation #2"""
-    f = (U21 + Cb) * (1 - d11) - (U0 + Cb) * (1 - d0)
-    return f
-
-
-def eq35(d11=d11, d1c=d1c, h=h, U11=U11, U21=U21):
-    """Bernoulli"""
-    f = d11 - d1c - h - (U11 ** 2 / 2) * (d11 ** 2 / d1c ** 2 - 1) - (U21 ** 2 / 2) * (1 - (1 - d11) ** 2 / (1 - d1c - h) ** 2)
-    return f
-
-
-def eq36(h=h, S=S, d1c=d1c, d11=d11, U11=U11, U21=U21):
-    """Momentum conservation. White & Helfrich 2012 contains an error.
-    All d_0 should be replaced with d_11. Corrected here.
-    """
-    f = (h ** 2 / (2 * S)) - h / (S) + (d1c ** 2 / 2) - (d11 ** 2 / 2) \
-        + d11 - d1c + d1c * h \
-        + (U11 ** 2) * (0.5 + (d11 ** 2 / d1c) - d11) \
-        + (U21 ** 2) * ((1 - d11) ** 2 / (1 - d1c - h) + d11 - 1)
-    return f
-
-
-def eq38(U0=U0, S=S, h=h, d11=d11, d1c=d1c, U11=U11, Dc=0):
-    """Energy dissipation. Dc=0 gives rightward bound of resonant wedge."""
-    f = h * ((1 - S) / S) - (U11 ** 2 / 2) * (d11 ** 2 / d1c ** 2) - Dc / U0
-    return f
-
-
-def eq39(U0=U0, d11=d11, U11=U11, U21=U21):
-    """Bore criticality. Upper bound of resonant wedge."""
-    # TODO: verify this
-    f = U0 + (U11 - U21) * (1 - 2 * d11) - ((1 - (U11 - U21) ** 2) * d11 * (1 - d11)) ** .5
-    return f
-
-
-def longwave_c0(d0=d0):
-    """Longwave speed given the interface depth d0"""
-    return (d0 * (1 - d0)) ** .5
+    @staticmethod
+    def longwave_c0(d0=d0):
+        """Longwave speed given the interface depth d0"""
+        return (d0 * (1 - d0)) ** .5
 
 ### /BASE EQUATIONS ###
 
 
 ### REARRANGEMENTS ###
 def subbed():
-    f1 = eq211()
-    f2 = eq212()
+    f1 = WHBase.eq211()
+    f2 = WHBase.eq212()
     # rearrange f1 to get U0^2
     U2 = ((f1 + 1) / U0 ** 2) ** -1
     # substitute this into f2
@@ -131,7 +137,7 @@ def subbed():
 
 
 def U(h=h, d0=d0, d1c=d1c):
-    f1 = eq211(h=h, d0=d0, d1c=d1c)
+    f1 = WHBase.eq211(h=h, d0=d0, d1c=d1c)
     # rearrange f1 to get U0^2
     U2 = ((f1 + 1) / U0 ** 2) ** -1
     U = U2 ** .5
@@ -162,16 +168,16 @@ def us():
     # actually, taking the first one seems to get the right
     # answers...
     # maybe it makes no difference.
-    cb = sp.solve(eq31(), Cb)[0]
-    u11 = sp.solve(eq33().subs(Cb, cb), U11)[0]
-    u21 = sp.solve(eq34().subs(Cb, cb), U21)[0]
+    cb = sp.solve(WHBase.eq31(), Cb)[0]
+    u11 = sp.solve(WHBase.eq33().subs(Cb, cb), U11)[0]
+    u21 = sp.solve(WHBase.eq34().subs(Cb, cb), U21)[0]
     return u11, u21
 
 
 def resonant_criterion():
     """Transforms eq 3.9 into a function of (d0, d11, U0)"""
     u11, u21 = us()
-    crit = eq39(U11=u11, U21=u21)
+    crit = WHBase.eq39(U11=u11, U21=u21)
     return crit
 ### /REARRANGEMENTS ###
 
@@ -182,11 +188,12 @@ def resonant_criterion():
 # supercritical for S<Sc and it isn't always 'supercritical'
 def u_squared(d1c_=d1c, d0_=d0, h_=h):
     """solve eq. 2.7 for U_0 ** 2"""
-    return sp.solve(eq27(), U0 ** 2)[0].subs({d1c: d1c_, h: h_, d0: d0_})
+    u2 = sp.solve(WHBase.eq27(), U0 ** 2)[0]
+    return u2.subs({d1c: d1c_, h: h_, d0: d0_})
 
 
 class ExtraCriticalSolver(object):
-    def __init__(self, S=0.75, d0=0.3, H=np.linspace(0.001, 0.49, 100)):
+    def __init__(self, S=0.75, d0=0.3, H=np.linspace(0.001, 0.49, 20)):
         self.S = S
         self.d0 = d0
         self.H = H
@@ -195,7 +202,7 @@ class ExtraCriticalSolver(object):
     def d1c_roots(self, h_):
         # substitute U_0**2 into eq. 2.8 for given value of h and
         # simplify to create a polynomial in d1c
-        d1cp = eq28().subs(U0 ** 2, u_squared())
+        d1cp = WHBase.eq28().subs(U0 ** 2, u_squared())
         d1cp = d1cp.subs({h: h_, S: self.S, d0: self.d0})
         d1cp = sp.fraction(d1cp.simplify())[0]
         # get all roots of this polynomial
@@ -298,7 +305,7 @@ class ConjugateStateSolver(object):
     @staticmethod
     def convert_units(h, U0, d1c, S, d0):
         """convert from White and Helfrich notation to Lamb notation
-        in the LAB frame.
+        in the GC frame.
 
         Inputs: h   - gravity current height
                 U0  - gravity current speed
@@ -309,19 +316,11 @@ class ConjugateStateSolver(object):
         p = dict(h1=h,
                  h2=d1c,
                  h3=1 - d1c - h,
-                 u1=U0,
-                 u2=U0 - U0 * (1 - d0) / (1 - d1c - h),
-                 u3=U0 - U0 * d0 / d1c,
+                 u1=0,
+                 u2=-U0 * (1 - d0) / (1 - d1c - h),
+                 u3=-U0 * d0 / d1c,
                   s=S / (1 - S),)
         return p
-
-
-
-
-
-
-
-
 
 ### /EXTRA CRITICAL SOLUTIONS ###
 
@@ -380,7 +379,7 @@ def branch_select(U, H, d0):
     on the interface.
     """
     # longwave speed
-    c0 = longwave_c0(d0)
+    c0 = WHBase.longwave_c0(d0)
 
     # are values in region that we care about?
     cond_physical = np.logical_and(0 < H, H < d0)
@@ -511,12 +510,12 @@ def right_resonance(S_=0.75, d0_=0.3, lower_bound=None, res=100):
     # solve eq38 for d1c (positive root)
     # with dissipation equal to zero
     # and sub out u11 to give d1c = f(U0, d0, S, h, d11)
-    d1c_ = sp.solve(eq38(Dc=0), d1c)[1].subs({U11: u11})
+    d1c_ = sp.solve(WHBase.eq38(Dc=0), d1c)[1].subs({U11: u11})
     # now sub out S, d0, d1c, u11, u21 from eqs 3.5 and 3.6
     # have to do S and d0 in additional step to get them all out
     subs = {d1c: d1c_, U11: u11, U21: u21}
-    s35 = eq35().subs(subs).subs({S: S_, d0: d0_})
-    s36 = eq36().subs(subs).subs({S: S_, d0: d0_})
+    s35 = WHBase.eq35().subs(subs).subs({S: S_, d0: d0_})
+    s36 = WHBase.eq36().subs(subs).subs({S: S_, d0: d0_})
     # s35 and s36 are two equations in (h, d11, U0)
     f35 = sp.lambdify((h, d11, U0), s35, "numpy")
     f36 = sp.lambdify((h, d11, U0), s36, "numpy")
@@ -543,7 +542,7 @@ def right_resonance(S_=0.75, d0_=0.3, lower_bound=None, res=100):
     U = branch[:, 2]
 
     # evaluate critical criterion
-    crit = eq39(U11=u11, U21=u21)
+    crit = WHBase.eq39(U11=u11, U21=u21)
     fcrit = sp.lambdify((U0, d0, d11), crit, "numpy")
     fc = fcrit(U, d0_, D11)
     zeros = np.where(np.diff(np.sign(fc)))[0]
@@ -559,7 +558,7 @@ def right_resonance(S_=0.75, d0_=0.3, lower_bound=None, res=100):
     # u11, u21, cb, d1c
     # fu11 = sp.lambdify((U0, d0, d11), u11, "numpy")
     # fu21 = sp.lambdify((U0, d0, d11), u21, "numpy")
-    # fcb = sp.lamdify((U0, d0, d11), sp.solve(eq31(), Cb), "numpy")
+    # fcb = sp.lamdify((U0, d0, d11), sp.solve(WHBase.eq31(), Cb), "numpy")
     # fd1c = sp.lambdify((U0, d0, d11, S, h), d1c_, "numpy")
 
 ### /RIGHT BOUND ###
@@ -596,17 +595,18 @@ def simple_d11_contour(S_=0.75, d0_=0.3, d11_=0.4):
     """
     # upper limit as (U0, d0, d11)
     # uses 1 equation
-    fcrit = resonant_criterion()
+    # fcrit = resonant_criterion()
     # as f(U0)
-    fcrit_u = fcrit.subs({d0: d0_, d11: d11_})
+    # fcrit_u = fcrit.subs({d0: d0_, d11: d11_})
     # u11, u21 as f(U0, d0, d11)
     # uses 3 equations
     u11, u21 = us()
     subu = {U11: u11, U21: u21}
     # last 2 equations as f(U0, d11, d1c, d0, h)
-    s35 = eq35().subs(subu).subs({S: S_, d0: d0_})
-    s36 = eq36().subs(subu).subs({S: S_, d0: d0_})
-    # now we
+    s35 = WHBase.eq35().subs(subu).subs({S: S_, d0: d0_})
+    s36 = WHBase.eq36().subs(subu).subs({S: S_, d0: d0_})
+    # not sure where this was going...
+    return s35, s36
 ### /AMPLITUDES ###
 
 
@@ -645,8 +645,11 @@ def map_maximum_amplitude(ns=2, nd=2, res=1000):
         H = np.linspace(0, d0_, res)
         lower, upper = critical_bounds(d0_, H=H)
         for j, S_ in enumerate(sarr):
-            print("branch = right_resonance(S_={S_}, d0_={d0_}, lower_bound=lower)".format(S_=S_, d0_=d0_))
-            branch = right_resonance(S_=S_, d0_=d0_, lower_bound=lower, res=res)
+            msg = ("branch = right_resonance(S_={S_}, "
+                   "d0_={d0_}, lower_bound=lower)")
+            print(msg.format(S_=S_, d0_=d0_))
+            branch = right_resonance(S_=S_, d0_=d0_,
+                                     lower_bound=lower, res=res)
             print "max d11", branch[0][1]
             amps[i, j] = branch[0][1]
     return amps
@@ -712,6 +715,10 @@ def main(d0_=0.3):
     ax.set_ylim(0, 1)
     plt.savefig('branches.png')
 
+
+# cs = ConjugateStateSolver(S=0.5, d0=0.3)
+# solvers = [cs.solver(hud) for hud in np.column_stack(cs.supercurve)]
+# roots = [solver.root_find() for solver in solvers]
 
 if __name__ == '__main__':
     make_regime_diagram()
